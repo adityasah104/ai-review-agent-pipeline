@@ -24,6 +24,8 @@ class PRReviewState(BaseModel):
     changed_files: List[Dict[str, Any]] = Field(default_factory=list)
     file_contents: Dict[str, str] = Field(default_factory=dict)
     # key: file path, value: raw content
+    file_diffs: Dict[str, str] = Field(default_factory=dict)
+    # key: file path, value: unified diff of only the changed lines
 
     # CI status
     ci_passed: Optional[bool] = None

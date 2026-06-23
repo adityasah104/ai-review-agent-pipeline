@@ -43,12 +43,18 @@ async def run(state: PRReviewState) -> dict:
     if not state.file_contents:
         return {"findings": []}
 
-    # Build file content summary for the prompt
+    # Build file text — prefer diff (focused), fall back to full content
     files_text = ""
     for path, content in state.file_contents.items():
-        # Truncate very large files
-        truncated = content[:3000] if len(content) > 3000 else content
-        files_text += f"\n\n### File: {path}\n```\n{truncated}\n```"
+        diff = state.file_diffs.get(path)
+        if diff:
+            files_text += (
+                f"\n\n### File: {path} (changed lines only)\n"
+                f"```diff\n{diff[:4000]}\n```"
+            )
+        else:
+            truncated = content[:3000] if len(content) > 3000 else content
+            files_text += f"\n\n### File: {path}\n```\n{truncated}\n```"
 
     rag_text = "\n".join(state.rag_context[:4]) if state.rag_context else "No guidelines available."
 
@@ -68,8 +74,11 @@ Look for:
 - Missing {{ ref() }} or {{ source() }} macro usage in dbt SQL
 - SELECT * usage in SQL models
 
-Changed files:
+Changed code (unified diff — lines starting with + are additions, - are deletions):
 {files_text}
+
+IMPORTANT: Only report issues introduced in the changed lines (+ lines in the diff).
+Do NOT flag pre-existing issues in unchanged context lines.
 
 Return your findings as a JSON array. Each finding must have:
 - file_path: string

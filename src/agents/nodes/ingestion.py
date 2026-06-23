@@ -1,6 +1,8 @@
+import subprocess
 import structlog
 from src.agents.state import PRReviewState
 from src.azure_client.pr_client import get_pr_diff, get_file_content
+from src.config.settings import settings
 
 log = structlog.get_logger()
 
@@ -9,6 +11,8 @@ async def run(state: PRReviewState) -> dict:
     """
     Fetches the list of changed files and their content from the PR.
     Only fetches Python (.py) and SQL (.sql) files — skips everything else.
+    Also computes a unified git diff for each file so LLM agents review
+    only the changed lines, not the entire file.
     """
     log.info("ingestion_start", pr_id=state.pr_id)
 
@@ -37,7 +41,7 @@ async def run(state: PRReviewState) -> dict:
                 "file_type": "python" if path.endswith(".py") else "sql",
             })
 
-            # Fetch actual content from the source branch
+            # Fetch actual content from the source branch (needed by Aider)
             content = await get_file_content(
                 state.repository_id,
                 path,
@@ -46,10 +50,40 @@ async def run(state: PRReviewState) -> dict:
             if content:
                 file_contents[path] = content
 
+        # ------------------------------------------------------------------
+        # Compute unified diffs for each changed file using the local clone.
+        # This is what the LLM review agents will use — focused on only the
+        # lines the developer actually changed.
+        # Falls back silently: if this fails, agents use full file_contents.
+        # ------------------------------------------------------------------
+        file_diffs = {}
+        repo_path = settings.DEMO_REPO_PATH
+        branch = state.source_branch.replace("refs/heads/", "")
+
+        try:
+            # Fetch latest remote refs so the diff is accurate
+            subprocess.run(
+                ["git", "fetch", "origin"],
+                cwd=repo_path, capture_output=True, timeout=30,
+            )
+            for file_meta in changed_files:
+                rel_path = file_meta["path"].lstrip("/")
+                diff_result = subprocess.run(
+                    ["git", "diff", f"origin/main...origin/{branch}", "--", rel_path],
+                    cwd=repo_path, capture_output=True, text=True, timeout=15,
+                )
+                if diff_result.returncode == 0 and diff_result.stdout.strip():
+                    file_diffs[file_meta["path"]] = diff_result.stdout
+            log.info("diff_computed", files_with_diff=len(file_diffs))
+        except Exception as e:
+            log.warning("diff_computation_failed", error=str(e))
+            # file_diffs stays empty — agents will fall back to full content
+
         log.info("ingestion_done", files_found=len(changed_files))
         return {
             "changed_files": changed_files,
             "file_contents": file_contents,
+            "file_diffs": file_diffs,
             "status": "INGESTED",
         }
 

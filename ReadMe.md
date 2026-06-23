@@ -1,9 +1,10 @@
 # AI PR Review Agent — Project Documentation
 
-> **Version:** 1.0.0 — Production-Ready  
+> **Version:** 1.1.0  
 > **Platform:** Azure DevOps · Amazon Bedrock · LangGraph  
 > **Model:** Amazon Nova Pro (via AWS Bedrock)  
 > **Aider Version:** v0.86.2+  
+> **Last Updated:** June 23, 2026  
 
 ---
 
@@ -18,8 +19,9 @@
 7. [What is Aider and How It Works](#7-what-is-aider-and-how-it-works)
 8. [Test Rounds Conducted](#8-test-rounds-conducted)
 9. [Final Evaluation — 20-Bug Test](#9-final-evaluation--20-bug-test)
-10. [What the Agent Is Currently Missing](#10-what-the-agent-is-currently-missing)
-11. [Future Improvement Roadmap](#11-future-improvement-roadmap)
+10. [Recent Test Rounds (June 23, 2026)](#10-recent-test-rounds-june-23-2026)
+11. [What the Agent Is Currently Missing](#11-what-the-agent-is-currently-missing)
+12. [Future Improvement Roadmap](#12-future-improvement-roadmap)
 
 ---
 
@@ -129,12 +131,15 @@ The server validates the event, creates a job in SQLite, and enqueues it.
 
 ### Step 4 — CI Auto-Fix Loop (`aider_ci_fix.py`)
 *Only triggered if CI failed.*
-- Sends the CI error logs to Aider with a targeted prompt
-- Aider reads all changed files and calls Nova Pro to generate fixes
-- Commits and pushes the fix to the feature branch
+- Processes **one file at a time** — each changed file gets its own focused Aider call
+- Each file prompt contains the CI log + strict instruction to only touch that file
+- After each file: runs `ruff format` + `ruff check --fix` to auto-clean Python
+- Commits all per-file fixes in a single Git commit and pushes to the feature branch
 - Graph loops back to Step 3 (re-checks CI)
 - **Maximum 2 retry attempts** (`AIDER_MAX_CI_RETRIES=2`)
 - If retries exhausted, agent force-continues to review anyway
+
+> ⚠️ **Why per-file?** Sending all files at once caused Nova Pro to hit its 10,000 output token limit and hallucinate fixes to unrelated files (e.g. corrupting `.sqlfluff` config). Per-file calls keep prompts small and safe.
 
 ### Step 5 — Context Retrieval (`context_retrieval.py`)
 - Fetches additional context (file history, project structure) for the LLM agents
@@ -164,7 +169,8 @@ For each file with findings:
   4. Run sqlfluff fix (if SQL file)
   5. Validation Gate:
      - Run ruff check . (final lint check)
-     - Run sqlfluff lint models/ (final SQL check)
+     - If SQL file: Run sqlfluff lint models/ (final SQL check)
+       (Skipped for Python-only files to avoid false positives)
      - If PASS → mark file as fixed
      - If FAIL → git checkout -- <file> (discard this file only)
   6. Move to next file
@@ -174,6 +180,8 @@ After all files processed:
   - git commit with summary of fixed/skipped files
   - git push origin <branch>
 ```
+
+> ⚠️ **Validation gate improvement (June 23, 2026):** SQLFluff validation is now skipped for Python-only files. Previously, a broken `.sqlfluff` config (caused by an earlier Aider hallucination) was causing `sqlfluff_ok=False` for every Python file, causing all LLM fixes to be incorrectly discarded.
 
 ### Step 8 — Publish Review (`publish_review.py`)
 - Aggregates all findings from all three agents
@@ -192,25 +200,45 @@ After all files processed:
 
 ```
 ai-review-agent/
-├── main.py                          # FastAPI entrypoint, webhook router, job queue
-├── .env                             # Environment config (Azure PAT, AWS keys, paths)
+├── main.py                          # FastAPI entrypoint, lifespan, router
+├── .env                             # Local secrets — NOT committed (in .gitignore)
+├── .env.example                     # Template — committed, safe to share
+├── .gitignore                       # Ignores .env, .venv, *.db, chroma_db, etc.
 ├── requirements.txt
+├── DOCUMENTATION.md                 # This file
 └── src/
     ├── agents/
     │   ├── graph.py                 # LangGraph StateGraph definition
-    │   ├── state.py                 # PRReviewState dataclass
+    │   ├── state.py                 # PRReviewState Pydantic model
     │   └── nodes/
-    │       ├── ingestion.py         # PR file fetching
-    │       ├── ci_status.py         # Azure DevOps build polling
-    │       ├── aider_ci_fix.py      # CI lint auto-fix via Aider
-    │       ├── context_retrieval.py # Context preparation
+    │       ├── ingestion.py         # PR file fetching from Azure DevOps
+    │       ├── ci_status.py         # Azure DevOps CI build polling
+    │       ├── aider_ci_fix.py      # CI lint auto-fix (per-file loop)
+    │       ├── context_retrieval.py # ChromaDB RAG guideline retrieval
     │       ├── code_quality.py      # Code quality LLM agent
     │       ├── security_audit.py    # Security LLM agent
     │       ├── performance.py       # Performance LLM agent
-    │       ├── aider_llm_fix.py     # Bug auto-fix via Aider (Layer 2)
+    │       ├── aider_llm_fix.py     # Bug auto-fix (per-file + validation gate)
     │       └── publish_review.py    # PR comment publisher
-    └── config/
-        └── settings.py              # Pydantic settings loader
+    ├── azure_client/
+    │   ├── pr_client.py             # Azure DevOps PR REST API calls
+    │   └── ci_client.py             # Azure DevOps Build REST API calls
+    ├── config/
+    │   └── settings.py              # Pydantic settings (reads from .env)
+    ├── db/
+    │   ├── database.py              # SQLAlchemy engine + SessionLocal
+    │   └── models.py                # ReviewJob ORM model
+    ├── gateway/
+    │   ├── routes.py                # Webhook + health + job status endpoints
+    │   └── signature.py             # Webhook Basic auth validation
+    ├── guidelines/
+    │   ├── python_guidelines.md     # Python coding standards (indexed into ChromaDB)
+    │   └── dbt_guidelines.md        # dbt/SQL coding standards (indexed into ChromaDB)
+    ├── queue/
+    │   └── worker.py                # Background thread polling SQLite job queue
+    └── rag/
+        ├── indexer.py               # ChromaDB collection setup + guideline seeding
+        └── retriever.py             # ChromaDB query interface
 
 demo-python-dbt-fixed/               # Demo repository (target of agent reviews)
 ├── src/
@@ -223,16 +251,22 @@ demo-python-dbt-fixed/               # Demo repository (target of agent reviews)
 
 ### Key Environment Variables
 
-| Variable | Purpose |
-|---|---|
-| `AZURE_DEVOPS_ORG` | Azure DevOps organisation name |
-| `AZURE_DEVOPS_PROJECT` | Azure DevOps project name |
-| `AZURE_DEVOPS_PAT` | Personal Access Token for API calls |
-| `AWS_ACCESS_KEY_ID` | AWS credentials for Bedrock |
-| `AWS_SECRET_ACCESS_KEY` | AWS credentials for Bedrock |
-| `AWS_REGION` | AWS region (`us-east-1`) |
-| `DEMO_REPO_PATH` | Absolute path to the demo repository on disk |
-| `AIDER_MAX_CI_RETRIES` | Max CI fix retry attempts (default: 2) |
+| Variable | Purpose | Default |
+|---|---|---|
+| `AZURE_DEVOPS_ORG` | Azure DevOps organisation name | — |
+| `AZURE_DEVOPS_PROJECT` | Azure DevOps project name | — |
+| `AZURE_DEVOPS_REPO` | Azure DevOps repository name | — |
+| `AZURE_DEVOPS_PAT` | Personal Access Token for API calls | — |
+| `AZURE_DEVOPS_WEBHOOK_SECRET` | Shared secret for webhook validation | — |
+| `AWS_ACCESS_KEY_ID` | AWS credentials for Bedrock | — |
+| `AWS_SECRET_ACCESS_KEY` | AWS credentials for Bedrock | — |
+| `AWS_REGION` | AWS region | `us-east-1` |
+| `BEDROCK_MODEL_ID` | Bedrock model ID | `amazon.nova-pro-v1:0` |
+| `DEMO_REPO_PATH` | Absolute path to the local demo repository | — |
+| `CHROMA_DB_PATH` | Path for ChromaDB vector store | `./chroma_db` |
+| `SQLITE_DB_PATH` | Path for SQLite job queue | `./review_agent.db` |
+| `AIDER_MAX_CI_RETRIES` | Max CI fix retry attempts | `2` |
+| `MIN_FIX_CONFIDENCE` | Minimum confidence (0.0–1.0) for a finding to trigger auto-fix | `0.7` |
 
 ---
 
@@ -440,7 +474,71 @@ An **LLM** (Amazon Nova Pro) is a text-in, text-out model. It can read and under
 
 ---
 
-## 10. What the Agent Is Currently Missing
+## 10. Recent Test Rounds (June 23, 2026)
+
+### Round 8 — Stability & Revert Test
+**Branch:** `feature/presentation-stress-test`  
+**Goal:** Verify system stability after LangSmith integration and revert  
+**Bugs Planted:** 15 bugs across `etl_pipeline.py` and `data_processor.py` — syntax errors, hardcoded tokens, SQL injection, exec() on untrusted input, N+1 queries, unsafe hashing  
+**Result:** Agent detected all critical security issues but failed to fix them — Aider hit the Nova Pro 10,000 output token limit because 23 findings were fed into one giant prompt for 2 files simultaneously  
+**Root Cause:** `aider_llm_fix.py` was sending all findings for all files in one Aider call  
+**Fix Applied:** Per-file loop already existed in `aider_llm_fix.py`; however, the prompt size was still too large because the legacy `aider_prompt` variable was being constructed before the loop. Identified that `aider_ci_fix.py` was the unfixed node.
+
+---
+
+### Round 9 — SQLFluff Corruption Incident
+**Branch:** `feature/presentation-test-3`  
+**Bugs Planted:** Hardcoded AWS key (`AKIA...`), unused `import sys`, badly formatted variable spacing  
+**Result:** CI failed → Aider CI fix attempt 1 hallucinated and **rewrote `.sqlfluff`** with invalid INI syntax using inline YAML-style comments. This corrupted the config, causing `sqlfluff` to crash on every subsequent invocation with a `FluffConfig` parsing error.  
+**Cascading Failure:** The LLM fix validation gate always ran `sqlfluff lint` even on pure Python files. Since `.sqlfluff` was broken, every Python file fix was incorrectly discarded (`sqlfluff_ok=False`). Aider committed nothing.  
+
+**Fixes Applied:**
+1. **Restored `.sqlfluff`** to valid config format and pushed to branch
+2. **Fixed validation gate** in `aider_llm_fix.py` — `sqlfluff lint` now only runs when the file being validated is a `.sql` file; Python-only PRs skip it entirely
+3. **Fixed `aider_ci_fix.py`** to process **one file at a time** — same per-file loop pattern as `aider_llm_fix.py` — eliminating token limit hits during the CI fix stage
+
+---
+
+### Round 10 — Final Comprehensive Test ✅
+**Branch:** `feature/final-agent-test`  
+**Bugs Planted:** 2 CI failures + 3 security + 3 performance + 3 code quality across `etl_pipeline.py` and `data_processor.py`
+
+| Category | Bugs Planted | Description |
+|---|---|---|
+| CI (ruff) | 2 | `import sys` unused, unsorted import block |
+| Security | 5 | Hardcoded DB password, hardcoded API key, 2× SQL injection, MD5 password hashing |
+| Performance | 3 | N+1 query loop, `SELECT *`, `fetchall()` loading entire table into memory |
+| Code Quality | 3 | `any` vs `Any` type hint, `import sqlite3` inside method, PEP 8 spacing |
+
+**Full Pipeline Execution (logs):**
+```
+CI Failed → per-file CI fix (1 attempt) → CI Passed ✓
+→ 3 LLM agents parallel → 17 findings (4 critical, 11 major, 2 minor)
+→ per-file Aider fix: data_processor.py ✅ etl_pipeline.py ✅
+→ committed both files → PR comment posted
+Total time: ~3 minutes
+```
+
+**Results:**
+
+| What was fixed | Result |
+|---|---|
+| `API_KEY = "sk-prod-..."` → `os.getenv("API_KEY")` | ✅ Perfect |
+| `DB_PASSWORD = "postgres_admin_2024"` → `os.getenv("DB_PASSWORD")` | ✅ Perfect |
+| SQL injection `"WHERE name = '" + name + "'"` → parameterized | ✅ Perfect |
+| `SELECT *` in two places → explicit column names | ✅ Perfect |
+| `any` return type hint → `Any` | ✅ Perfect |
+| N+1 query loop → batched with `set()` | ✅ Good attempt |
+| Large `fetchall()` → added `LIMIT 100` | ✅ Sensible |
+| CI: unused `import sys`, unsorted imports | ✅ Perfect |
+| MD5 → bcrypt | ⚠️ Correct intent, bcrypt not installed in demo env |
+| SQL injection in `process_orders_batch` | ⚠️ Partially fixed (f-string still used) |
+
+**Overall rating for Round 10: 8.5/10** — Pipeline fully functional, both CI fix and LLM fix worked end-to-end with no skipped files.
+
+---
+
+## 11. What the Agent Is Currently Missing
 
 ### 10.1 No Final CI Verification After Bug Fix
 The agent runs a CI fix loop before the LLM review but has **no verification loop after** the Aider LLM fix. If Aider's bug fixes introduce new linting issues, the PR stays in a failing CI state with no further agent intervention.
@@ -459,18 +557,18 @@ The agent reliably catches **security** bugs (100% on critical) but misses many 
 ### 10.4 Cross-File Dependency Blindness
 The Layer 2 (per-file) architecture processes files in isolation. If a fix in `etl_pipeline.py` changes a function signature that `data_processor.py` calls, the second file will not be updated accordingly.
 
-### 10.5 No Diff-Based Review
-The agent currently reads **entire file contents** rather than reviewing only the **changed lines (diff)**. This causes the LLM to flag pre-existing issues in unchanged code, generating noise in the PR comment.
+### 11.5 No Diff-Based Review
+The agent currently reads **entire file contents** rather than reviewing only the **changed lines (diff)**. This causes the LLM to flag pre-existing issues in unchanged code, generating noise in the PR comment. Observed in testing: a 90-line file with 1 line changed generated 18 findings, many on untouched code.
 
-### 10.6 No Confidence Scoring
-All findings are reported with equal weight. There is no confidence score to distinguish between a near-certain SQL injection detection and a speculative performance suggestion.
+### 11.6 No Final CI Verification After LLM Fix
+The agent runs a CI fix loop *before* the LLM review but has **no verification loop after** the Aider LLM fix. If Aider's bug fixes introduce new linting issues, the PR stays in a failing CI state with no further agent intervention.
 
-### 10.7 Single Model Dependency
+### 11.7 Single Model Dependency
 The entire agent relies on Amazon Nova Pro. There is no fallback if the model is unavailable, rate-limited, or returns a malformed response.
 
 ---
 
-## 11. Future Improvement Roadmap
+## 12. Future Improvement Roadmap
 
 ### 🔴 High Priority
 
@@ -545,4 +643,18 @@ Build a web UI connected to the SQLite database showing:
 
 ## Summary
 
-The AI PR Review Agent is a production-grade autonomous code review system that successfully catches **100% of critical security vulnerabilities** and applies intelligent fixes using a safe, per-file validation architecture. Its current detection rate of 65% is primarily limited by the capabilities of Amazon Nova Pro on subtle code quality patterns. Upgrading to Claude 3.5 Sonnet and adding a final CI verification loop are the two highest-impact improvements available today, which would bring the overall rating from 7/10 to approximately 9/10.
+The AI PR Review Agent is a fully autonomous code review system that catches **100% of critical security vulnerabilities** and applies intelligent auto-fixes using a safe, per-file validation architecture.
+
+As of **June 23, 2026**, the system has completed 10 test rounds. The architecture was progressively hardened through real failure scenarios including token limit overflows, LLM hallucinations corrupting config files, and false-positive validation failures. All three major failure modes have been resolved.
+
+| Metric | Status |
+|---|---|
+| CI Auto-Fix (per-file loop) | ✅ Stable |
+| LLM Review (3 parallel agents) | ✅ Stable |
+| Auto-Fix Validation Gate | ✅ Fixed (Python/SQL separated) |
+| Confidence Scoring | ✅ Implemented |
+| Critical Security Detection | ✅ 100% |
+| Overall Fix Success Rate | ~85% |
+| Current Rating | **8.5/10** |
+
+The two highest-impact next improvements are **diff-based review** (eliminating pre-existing code noise) and **upgrading to Claude 3.5 Sonnet** (near-zero hallucinations, higher quality fixes).

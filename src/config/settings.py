@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # Aider
     AIDER_MAX_CI_RETRIES: int = 2
-    MIN_FIX_CONFIDENCE: float = 0.7
+    MIN_FIX_CONFIDENCE: float = 0.95
 
 
 

@@ -80,6 +80,10 @@ Fix only the issues in the file `{file_path}` reported above. Rules:
             aider_cmd = [
                 "aider",
                 "--yes",
+                "--no-gui",
+                "--no-show-release-notes",
+                "--no-show-model-warnings",
+                "--no-check-update",
                 "--no-auto-commits",
                 "--no-stream",
                 "--edit-format", "diff",

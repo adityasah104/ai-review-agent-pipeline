@@ -20,9 +20,12 @@ async def run(state: PRReviewState) -> dict:
     elapsed = 0
     build = None
 
-    # Poll until we find a build for this branch
+    # Poll until we find a build for this branch or PR
     while elapsed < CI_POLL_TIMEOUT:
         build = await get_latest_build_for_branch(state.source_branch)
+        if not build and state.pr_id:
+            build = await get_latest_build_for_branch(f"refs/pull/{state.pr_id}/merge")
+            
         if build:
             break
         log.info("ci_waiting_for_build", elapsed=elapsed)
@@ -42,6 +45,9 @@ async def run(state: PRReviewState) -> dict:
     while build_status in ("inProgress", "notStarted", "postponed"):
         await asyncio.sleep(CI_POLL_INTERVAL)
         build = await get_latest_build_for_branch(state.source_branch)
+        if not build and state.pr_id:
+            build = await get_latest_build_for_branch(f"refs/pull/{state.pr_id}/merge")
+        
         if build:
             build_status = build.get("status", "")
             build_result = build.get("result", "")

@@ -1,7 +1,9 @@
 import json
 import structlog
-from fastapi import APIRouter, Request, BackgroundTasks
+from fastapi import APIRouter, Request, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import List, Dict, Any
 from src.gateway.signature import validate_azure_webhook
 from src.db.database import SessionLocal
 from src.db.models import ReviewJob
@@ -98,5 +100,28 @@ async def get_job_status(job_id: int):
             "created_at": str(job.created_at),
             "error": job.error_message,
         }
+    finally:
+        db.close()
+
+#NEW Hybrid Integration
+
+class PRAgentPayload(BaseModel):
+    pr_id: int
+    refined_findings: List[Dict[str, Any]]
+
+@router.post("/api/findings/submit")
+def receive_refined_findings(payload: PRAgentPayload):
+    # Removed secret validation for testing purposes
+
+    db = SessionLocal()
+    try:
+        job = db.query(ReviewJob).filter(ReviewJob.pr_id == payload.pr_id).order_by(ReviewJob.id.desc()).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        job.refined_findings = payload.model_dump().get("refined_findings", [])
+        job.refined_findings_received = True
+        db.commit()
+        return {"status": "success"}
     finally:
         db.close()

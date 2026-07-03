@@ -1,6 +1,5 @@
 import subprocess
 import structlog
-import os
 from src.agents.state import PRReviewState
 from src.config.settings import settings
 from src.azure_client.auth import get_azure_devops_token
@@ -14,11 +13,13 @@ async def run(state: PRReviewState) -> dict:
     Only fixes minor and major findings — skips critical (too risky to auto-fix).
     Commits to the feature branch. Does NOT merge to main.
     """
-    log.info("aider_llm_fix_start", findings_count=len(state.findings))
+    # Use PR-Agent's refined findings if available, otherwise fall back to raw findings
+    active_findings = state.refined_findings if state.refined_findings else state.findings
+    log.info("aider_llm_fix_start", findings_count=len(active_findings))
 
     # Filter: auto-fix minor, major, and critical that meet confidence threshold
     fixable_findings = [
-        f for f in state.findings
+        f for f in active_findings
         if f.get("severity") in ("minor", "major", "critical")
         and f.get("category") in ("code_quality", "performance", "security")
         and float(f.get("confidence", 0.0)) >= settings.MIN_FIX_CONFIDENCE
@@ -33,7 +34,7 @@ async def run(state: PRReviewState) -> dict:
     for i, finding in enumerate(fixable_findings, 1):
         fix_instructions.append(
             f"{i}. In {finding.get('file_path', 'unknown')} "
-            f"({finding.get('line_hint', '')}): "
+            f"({finding.get('line_number', '')}): "
             f"{finding.get('suggestion', finding.get('description', ''))}"
         )
 
@@ -92,7 +93,7 @@ Rules you must follow:
             file_instructions = []
             for i, finding in enumerate(file_findings, 1):
                 file_instructions.append(
-                    f"{i}. ({finding.get('line_hint', '')}): "
+                    f"{i}. ({finding.get('line_number', '')}): "
                     f"{finding.get('suggestion', finding.get('description', ''))}"
                 )
 
@@ -117,8 +118,10 @@ Rules:
                 "--no-check-update",
                 "--no-auto-commits",
                 "--no-stream",
+                "--no-git",
+                "--map-tokens", "0",
                 "--edit-format", "diff",
-                "--lint-cmd", "python: ruff check .",
+                "--lint-cmd", "python: ruff check",
                 "--auto-lint",
                 "--model", "bedrock/amazon.nova-pro-v1:0",
                 "--message", file_prompt,

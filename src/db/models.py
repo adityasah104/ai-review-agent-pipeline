@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, Boolean
 from src.db.database import Base
 
 
@@ -30,6 +30,10 @@ class ReviewJob(Base):
     result_summary = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     raw_payload = Column(JSON, nullable=True)
+
+    #New Hybrid Integration
+    refined_findings = Column(JSON, nullable=True)
+    refined_findings_received = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

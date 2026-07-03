@@ -1,4 +1,3 @@
-import os
 import subprocess
 import structlog
 from src.agents.state import PRReviewState
@@ -64,20 +63,28 @@ async def run(state: PRReviewState) -> dict:
         files_fixed = []
 
         for file_path in changed_file_paths:
+            log.info("aider_ci_fix_file_start", file=file_path, attempt=attempts)
+
+            if file_path.endswith(".sql"):
+                # Fast path for SQL: Just use sqlfluff auto-fix, don't waste expensive AI tokens
+                log.info("aider_ci_fix_sqlfluff_only", file=file_path)
+                subprocess.run(
+                    ["sqlfluff", "fix", file_path, "--dialect", "ansi", "--templater", "jinja", "--force"],
+                    cwd=repo_path, capture_output=True
+                )
+                files_fixed.append(file_path)
+                continue
+
             file_prompt = f"""The CI pipeline failed on branch '{branch}'. Here are the error logs:
 
 {log_summary}
 
 Fix only the issues in the file `{file_path}` reported above. Rules:
 - Only edit `{file_path}`. Do NOT touch any other file.
-- Only fix linting errors, formatting errors, and SQLFluff violations.
+- Fix Ruff errors only.
 - Do NOT change business logic or add new features.
-- For Python files: fix Ruff errors only.
-- For SQL files: fix SQLFluff errors only.
 - Ensure the file remains syntactically valid after your changes.
 """
-
-            log.info("aider_ci_fix_file_start", file=file_path, attempt=attempts)
 
             aider_cmd = [
                 "aider",
@@ -88,7 +95,11 @@ Fix only the issues in the file `{file_path}` reported above. Rules:
                 "--no-check-update",
                 "--no-auto-commits",
                 "--no-stream",
+                "--no-git",
+                "--map-tokens", "0",
                 "--edit-format", "diff",
+                "--lint-cmd", "python: ruff check",
+                "--auto-lint",
                 "--model", "bedrock/amazon.nova-pro-v1:0",
                 "--message", file_prompt,
                 file_path,
@@ -99,7 +110,7 @@ Fix only the issues in the file `{file_path}` reported above. Rules:
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
-                timeout=180,
+                timeout=150,
             )
             log.info("aider_ci_fix_file_output", file=file_path, returncode=result.returncode, stdout=result.stdout[-300:])
 

@@ -19,109 +19,58 @@ CATEGORY_LABEL = {
 }
 
 
+def _findings_table(findings: list, lines: list) -> None:
+    """Renders a single markdown table with findings and their corresponding fixes."""
+    lines.append("| Severity | File | Location | Confidence | Issue | Fix Applied |")
+    lines.append("|----------|------|----------|------------|-------|-------------|")
+
+    for f in findings:
+        severity  = f.get("severity", "minor")
+        badge     = SEVERITY_BADGE.get(severity, severity.upper())
+        file_path = f.get("file_path", "")
+        line_hint = f.get("line_hint", f.get("line_number", "—"))
+        if not line_hint or str(line_hint).strip().lower() in ("none-none", "none", "null"):
+            line_hint = "—"
+            
+        conf_val  = float(f.get("confidence", 0.0))
+        conf_pct  = f"{int(conf_val * 100)}%"
+        desc      = f.get("description", "").replace("|", "\\|")
+        suggestion = f.get("suggestion", "").replace("|", "\\|")
+
+        skipped = ""
+        if conf_val < settings.MIN_FIX_CONFIDENCE:
+            skipped = " *(auto-fix skipped)*"
+
+        lines.append(
+            f"| {badge} | `{file_path}` | {line_hint} | {conf_pct} | {desc} | {suggestion}{skipped} |"
+        )
+    lines.append("")
+
+
 def _build_comment(state: PRReviewState) -> str:
     lines = []
 
-    # ── Header ────────────────────────────────────────────────────────────────
     lines.append("## AI Code Review")
     lines.append("")
-    lines.append("> Automated review powered by **Amazon Bedrock Nova Pro**.")
+    # Tagging the author (in ADO, the PR author will be notified by this comment natively, but we add a visual tag too)
+    lines.append("cc: @Author")
+    lines.append("")
+    
+    if state.status == "CI_FIX_GAVE_UP":
+        lines.append("> **Warning:** Attempted CI fixes but pipeline is still failing. Manual intervention required.")
+        lines.append("")
+
+    lines.append("Review-agent found these issues and applied these fixes in your code:")
     lines.append("")
 
-    # ── CI Fix ────────────────────────────────────────────────────────────────
-    if state.ci_fix_attempts > 0:
-        lines.append("### CI Pipeline")
-        if state.status == "CI_FIX_GAVE_UP":
-            lines.append(
-                f"> **Warning:** Attempted {state.ci_fix_attempts} automated fix(es) but "
-                "the CI pipeline is still failing. Manual intervention is required."
-            )
-        else:
-            lines.append(
-                f"> Automated CI fix applied ({state.ci_fix_attempts} attempt(s)). "
-                "All lint errors resolved."
-            )
-        lines.append("")
-
-    # ── Findings ──────────────────────────────────────────────────────────────
-    findings = state.findings
+    # Use refined findings if available, otherwise fallback to raw findings
+    findings = state.refined_findings if state.refined_findings else state.findings
+    
     if findings:
-        total    = len(findings)
-        critical = sum(1 for f in findings if f.get("severity") == "critical")
-        major    = sum(1 for f in findings if f.get("severity") == "major")
-        minor    = sum(1 for f in findings if f.get("severity") == "minor")
-
-        lines.append("### Review Summary")
-        lines.append("")
-        lines.append("| Total | Critical | Major | Minor |")
-        lines.append("|-------|----------|-------|-------|")
-        lines.append(f"| {total} | {critical} | {major} | {minor} |")
-        lines.append("")
-
-        # Group by category
-        by_category: dict = {}
-        for f in findings:
-            cat = f.get("category", "other")
-            by_category.setdefault(cat, []).append(f)
-
-        for cat, cat_findings in by_category.items():
-            label = CATEGORY_LABEL.get(cat, cat.title())
-            lines.append(f"### {label}")
-            lines.append("")
-            lines.append("| Severity | File | Location | Confidence | Finding |")
-            lines.append("|----------|------|----------|------------|---------|")
-
-            for f in cat_findings:
-                severity  = f.get("severity", "minor")
-                badge     = SEVERITY_BADGE.get(severity, severity.upper())
-                file_path = f.get("file_path", "")
-                line_hint = f.get("line_hint", "—")
-                conf_val  = float(f.get("confidence", 0.0))
-                conf_pct  = f"{int(conf_val * 100)}%"
-                desc      = f.get("description", "").replace("|", "\\|")
-
-                skipped = ""
-                if conf_val < settings.MIN_FIX_CONFIDENCE:
-                    skipped = " *(auto-fix skipped — low confidence)*"
-
-                lines.append(
-                    f"| {badge} | `{file_path}` | {line_hint} | {conf_pct} | {desc}{skipped} |"
-                )
-
-            lines.append("")
-
-            # Suggestions as a block under each category table
-            suggestions = [f for f in cat_findings if f.get("suggestion")]
-            if suggestions:
-                lines.append("**Suggestions**")
-                lines.append("")
-                for f in suggestions:
-                    file_path = f.get("file_path", "")
-                    line_hint = f.get("line_hint", "")
-                    lines.append(
-                        f"- **`{file_path}`** ({line_hint}): {f['suggestion']}"
-                    )
-                lines.append("")
-
+        _findings_table(findings, lines)
     else:
-        lines.append("### Review Summary")
+        lines.append("No issues were identified.")
         lines.append("")
-        lines.append("No issues were identified in the changed code.")
-        lines.append("")
-
-    # ── Auto-Fix ──────────────────────────────────────────────────────────────
-    if state.aider_fix_summary:
-        lines.append("### Automated Fixes")
-        lines.append("")
-        lines.append(state.aider_fix_summary)
-        lines.append("")
-
-    # ── Footer ────────────────────────────────────────────────────────────────
-    lines.append("---")
-    lines.append(
-        "*AI Review Agent &nbsp;·&nbsp; Amazon Bedrock Nova Pro &nbsp;·&nbsp; "
-        "Findings are limited to lines changed in this PR.*"
-    )
 
     return "\n".join(lines)
 

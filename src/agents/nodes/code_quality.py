@@ -18,7 +18,7 @@ def _call_bedrock(prompt: str) -> str:
             }
         ],
         "inferenceConfig": {
-            "maxTokens": 2000,
+            "maxTokens": 5120,
             "temperature": 0,
         },
     }
@@ -43,51 +43,53 @@ async def run(state: PRReviewState) -> dict:
     if not state.file_contents:
         return {"findings": []}
 
-    # Build file text — prefer diff (focused), fall back to full content
+    # Build file text with explicit line numbers
     files_text = ""
     for path, content in state.file_contents.items():
-        diff = state.file_diffs.get(path)
-        if diff:
-            files_text += (
-                f"\n\n### File: {path} (changed lines only)\n"
-                f"```diff\n{diff[:4000]}\n```"
-            )
-        else:
-            truncated = content[:3000] if len(content) > 3000 else content
-            files_text += f"\n\n### File: {path}\n```\n{truncated}\n```"
+        # Add line numbers to full content
+        lines = content.split('\n')
+        numbered_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines)]
+        numbered_content = "\n".join(numbered_lines)
+        
+        diff = state.file_diffs.get(path, "No diff available.")
+        
+        files_text += f"\n\n### File: {path}\n"
+        files_text += f"--- FULL FILE WITH LINE NUMBERS ---\n```\n{numbered_content[:4000]}\n```\n"
+        files_text += f"--- CHANGED LINES (diff) ---\n```diff\n{diff[:2000]}\n```\n"
 
     rag_text = "\n".join(state.rag_context[:4]) if state.rag_context else "No guidelines available."
 
-    prompt = f"""You are a senior code reviewer specializing in Python and dbt/SQL.
+    prompt = f"""You are a ruthless, senior code reviewer specializing in Python and dbt/SQL.
 
 Relevant coding guidelines from our internal standards:
 {rag_text}
 
-Review the following code changes for CODE QUALITY issues only.
-Look for:
-- PEP 8 violations in Python
-- Poor naming conventions
-- Missing docstrings on functions/classes
-- Overly complex functions (too many lines, too many parameters)
-- Hardcoded values that should be constants or config
-- dbt model naming convention violations (stg_, mart_, int_ prefixes)
-- Missing {{ ref() }} or {{ source() }} macro usage in dbt SQL
-- SELECT * usage in SQL models
+Review the following code changes for SEVERE CODE QUALITY and LOGIC issues only.
+You MUST ONLY report actionable bugs that require an immediate code change. 
+DO NOT report nitpicks (e.g., missing docstrings, PEP 8 style issues, minor naming conventions, or subjective refactoring suggestions).
 
-Changed code (unified diff — lines starting with + are additions, - are deletions):
+Look for:
+- Severe logic errors, unhandled exceptions, or broken functionality
+- Hardcoded values that should be constants or environment variables
+- dbt model naming convention violations that break DAG execution
+- Missing {{ ref() }} or {{ source() }} macro usage in dbt SQL
+- SELECT * usage in SQL models that causes schema drift
+
+Here is the code context. You are provided with the full file (with line numbers on the left) and the git diff:
 {files_text}
 
-IMPORTANT: Only report issues introduced in the changed lines (+ lines in the diff).
+IMPORTANT: Only report issues introduced in the changed lines (shown in the diff).
 Do NOT flag pre-existing issues in unchanged context lines.
+If an issue does not absolutely require a code change, IGNORE IT.
 
 Return your findings as a JSON array. Each finding must have:
 - file_path: string
-- line_hint: string (e.g. "line 12" or "throughout file")  
-- severity: "major" or "minor"
+- line_number: integer — the exact line number from the FULL FILE WITH LINE NUMBERS block (left side of the `|`). This field MUST be called `line_number`, NOT `file_number`. Example: if the code shows `42 | def foo():`, then line_number is 42.
+- severity: "major" or "critical" (DO NOT return "minor")
 - category: "code_quality"
-- description: string (clear explanation of the issue)
+- description: string (clear explanation of the severe logic error or bug)
 - suggestion: string (exactly how to fix it)
-- confidence: float (0.0 to 1.0, where 1.0 is absolute certainty and 0.5 is a guess)
+- confidence: float (0.0 to 1.0)
 
 Return ONLY the JSON array, no other text. If no issues found, return [].
 """

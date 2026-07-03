@@ -1,5 +1,4 @@
 import hmac
-import hashlib
 from fastapi import HTTPException, Request
 from src.config.settings import settings
 

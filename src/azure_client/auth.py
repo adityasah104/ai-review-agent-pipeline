@@ -1,6 +1,6 @@
 import httpx
 import base64
-from typing import Dict, Tuple
+from typing import Dict
 from src.config.settings import settings
 
 # In-memory cache for the token

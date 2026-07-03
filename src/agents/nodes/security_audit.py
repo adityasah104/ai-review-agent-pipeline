@@ -17,7 +17,7 @@ def _call_bedrock(prompt: str) -> str:
             }
         ],
         "inferenceConfig": {
-            "maxTokens": 2000,
+            "maxTokens": 5120,
             "temperature": 0,
         },
     }
@@ -39,49 +39,54 @@ async def run(state: PRReviewState) -> dict:
     if not state.file_contents:
         return {"findings": []}
 
-    # Build file text — prefer diff (focused), fall back to full content
+    # Build file text with explicit line numbers
     files_text = ""
     for path, content in state.file_contents.items():
-        diff = state.file_diffs.get(path)
-        if diff:
-            files_text += (
-                f"\n\n### File: {path} (changed lines only)\n"
-                f"```diff\n{diff[:4000]}\n```"
-            )
-        else:
-            truncated = content[:3000] if len(content) > 3000 else content
-            files_text += f"\n\n### File: {path}\n```\n{truncated}\n```"
+        # Add line numbers to full content
+        lines = content.split('\n')
+        numbered_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines)]
+        numbered_content = "\n".join(numbered_lines)
+        
+        diff = state.file_diffs.get(path, "No diff available.")
+        
+        files_text += f"\n\n### File: {path}\n"
+        files_text += f"--- FULL FILE WITH LINE NUMBERS ---\n```\n{numbered_content[:4000]}\n```\n"
+        files_text += f"--- CHANGED LINES (diff) ---\n```diff\n{diff[:2000]}\n```\n"
 
     rag_text = "\n".join(state.rag_context[:2]) if state.rag_context else ""
 
-    prompt = f"""You are a security engineer reviewing Python and SQL code for vulnerabilities.
+    prompt = f"""You are a ruthless security engineer reviewing Python and SQL code for vulnerabilities.
 
 {f"Relevant security guidelines: {rag_text}" if rag_text else ""}
 
-Review the following code for SECURITY issues only.
+Review the following code for SEVERE SECURITY issues only.
+You MUST ONLY report actionable vulnerabilities that require an immediate code change.
+DO NOT report theoretical risks, subjective security "best practices", or minor nitpicks.
+
 Look for:
 - SQL injection risks (string concatenation in SQL instead of parameterized queries)
 - Hardcoded credentials, API keys, passwords, or tokens
 - Insecure use of eval() or exec() in Python
-- Missing input validation
+- Missing input validation that leads to direct exploits
 - Exposure of sensitive data in logs or error messages
 - Use of deprecated or insecure Python functions (e.g. pickle, md5)
 - SQL models exposing PII columns without masking
 
-Changed code (unified diff — lines starting with + are additions, - are deletions):
+Here is the code context. You are provided with the full file (with line numbers on the left) and the git diff:
 {files_text}
 
-IMPORTANT: Only report issues introduced in the changed lines (+ lines in the diff).
+IMPORTANT: Only report issues introduced in the changed lines (shown in the diff).
 Do NOT flag pre-existing issues in unchanged context lines.
+If an issue does not absolutely require a code change, IGNORE IT.
 
 Return your findings as a JSON array. Each finding must have:
 - file_path: string
-- line_hint: string
-- severity: "critical" or "major"
+- line_number: integer — the exact line number from the FULL FILE WITH LINE NUMBERS block (left side of the `|`). This field MUST be called `line_number`, NOT `file_number`. Example: if the code shows `42 | def foo():`, then line_number is 42.
+- severity: "critical" or "major" (DO NOT return "minor")
 - category: "security"
-- description: string
+- description: string (clear explanation of the exploit or vulnerability)
 - suggestion: string
-- confidence: float (0.0 to 1.0, where 1.0 is absolute certainty and 0.5 is a guess)
+- confidence: float (0.0 to 1.0)
 
 Return ONLY the JSON array, no other text. If no issues found, return [].
 """

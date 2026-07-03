@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: str | None = None
     AWS_SECRET_ACCESS_KEY: str | None = None
 
+    # Groq (used by Aider for auto-fix)
+    GROQ_API_KEY: str = ""
+
     # App
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
@@ -31,7 +34,12 @@ class Settings(BaseSettings):
 
     # Aider
     AIDER_MAX_CI_RETRIES: int = 2
-    MIN_FIX_CONFIDENCE: float = 0.95
+    MIN_FIX_CONFIDENCE: float = 0.85
+
+    # New Hybrid Integration
+    PR_AGENT_REFINE_URL: str = ""
+    INTERNAL_API_SECRET: str = "my-super-secret-token"
+    EXTERNAL_FINDINGS_TIMEOUT_SECONDS: int = 3600
 
 
 

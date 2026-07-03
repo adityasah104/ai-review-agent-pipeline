@@ -17,7 +17,7 @@ def _call_bedrock(prompt: str) -> str:
             }
         ],
         "inferenceConfig": {
-            "maxTokens": 2000,
+            "maxTokens": 5120,
             "temperature": 0,
         },
     }
@@ -39,46 +39,51 @@ async def run(state: PRReviewState) -> dict:
     if not state.file_contents:
         return {"findings": []}
 
-    # Build file text — prefer diff (focused), fall back to full content
+    # Build file text with explicit line numbers
     files_text = ""
     for path, content in state.file_contents.items():
-        diff = state.file_diffs.get(path)
-        if diff:
-            files_text += (
-                f"\n\n### File: {path} (changed lines only)\n"
-                f"```diff\n{diff[:4000]}\n```"
-            )
-        else:
-            truncated = content[:3000] if len(content) > 3000 else content
-            files_text += f"\n\n### File: {path}\n```\n{truncated}\n```"
+        # Add line numbers to full content
+        lines = content.split('\n')
+        numbered_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines)]
+        numbered_content = "\n".join(numbered_lines)
+        
+        diff = state.file_diffs.get(path, "No diff available.")
+        
+        files_text += f"\n\n### File: {path}\n"
+        files_text += f"--- FULL FILE WITH LINE NUMBERS ---\n```\n{numbered_content[:4000]}\n```\n"
+        files_text += f"--- CHANGED LINES (diff) ---\n```diff\n{diff[:2000]}\n```\n"
 
-    prompt = f"""You are a performance engineering expert reviewing Python and SQL code.
+    prompt = f"""You are a ruthless performance engineering expert reviewing Python and SQL code.
 
-Review the following code for PERFORMANCE issues only.
+Review the following code for SEVERE PERFORMANCE issues only.
+You MUST ONLY report actionable bottlenecks that require an immediate code change.
+DO NOT report micro-optimizations, theoretical scaling concerns, or minor nitpicks.
+
 Look for:
 - N+1 query patterns in Python (loops that execute database queries)
 - Missing indexes implied by filter/join columns in SQL
 - SELECT * in SQL (fetches unnecessary columns)
 - Large result sets loaded entirely into memory in Python
-- Inefficient list comprehensions vs generators for large data
+- Inefficient list comprehensions vs generators for massive data
 - dbt models missing incremental materializations for large tables
 - Repeated expensive function calls inside loops
 - SQL DISTINCT or ORDER BY on large unsorted datasets without purpose
 
-Changed code (unified diff — lines starting with + are additions, - are deletions):
+Here is the code context. You are provided with the full file (with line numbers on the left) and the git diff:
 {files_text}
 
-IMPORTANT: Only report issues introduced in the changed lines (+ lines in the diff).
+IMPORTANT: Only report issues introduced in the changed lines (shown in the diff).
 Do NOT flag pre-existing issues in unchanged context lines.
+If an issue does not absolutely require a code change, IGNORE IT.
 
 Return your findings as a JSON array. Each finding must have:
 - file_path: string
-- line_hint: string
-- severity: "major" or "minor"
+- line_number: integer — the exact line number from the FULL FILE WITH LINE NUMBERS block (left side of the `|`). This field MUST be called `line_number`, NOT `file_number`. Example: if the code shows `42 | def foo():`, then line_number is 42.
+- severity: "critical" or "major" (DO NOT return "minor")
 - category: "performance"
-- description: string
+- description: string (clear explanation of the severe bottleneck)
 - suggestion: string
-- confidence: float (0.0 to 1.0, where 1.0 is absolute certainty and 0.5 is a guess)
+- confidence: float (0.0 to 1.0)
 
 Return ONLY the JSON array, no other text. If no issues found, return [].
 """

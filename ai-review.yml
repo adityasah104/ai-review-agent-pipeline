@@ -1,0 +1,49 @@
+trigger: none
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # Secrets will be mapped from Azure DevOps Library (Variable Groups)
+  - group: AI-Agent-Secrets
+
+steps:
+  - checkout: self
+    persistCredentials: true # Allows Aider to git push back to the branch
+
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '3.11'
+
+  - script: |
+      pip install -r requirements.txt
+    displayName: 'Install Agent Dependencies'
+
+  # 1. Native CI Checking
+  - script: |
+      ruff check src/
+      sqlfluff lint models/ --dialect ansi
+    displayName: 'Standard CI Checks'
+    continueOnError: true
+
+  # 2. AI Review Agent & PR-Agent integration
+  - script: |
+      # (Optional) Spin up PR-Agent locally in the background
+      # python -m pr_agent.server &
+      
+      # Configure Git for Aider commits
+      git config --global user.email "ai-agent@company.com"
+      git config --global user.name "AI Review Agent"
+      
+      # Run the agent CLI
+      python cli.py
+    displayName: 'Run AI Review & PR-Agent Auto-Fix'
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
+      AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
+      PR_AGENT_REFINE_URL: "http://localhost:8080/submit" # Pointing locally!

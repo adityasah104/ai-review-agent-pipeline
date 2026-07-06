@@ -1,10 +1,8 @@
-import time
+import json
 import httpx
 import structlog
 from src.agents.state import PRReviewState
 from src.config.settings import settings
-from src.db.database import SessionLocal
-from src.db.models import ReviewJob
 
 log = structlog.get_logger()
 
@@ -14,8 +12,6 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
 
     if not findings:
         return {"refined_findings": []}
-
-    import json
 
     def sanitize_finding(f: dict) -> dict:
         """
@@ -59,32 +55,18 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
     print("--------------------------------------\n")
 
     try:
-        httpx.post(settings.PR_AGENT_REFINE_URL, json=payload, timeout=10.0)
-        log.info("sent_findings_to_pr_agent", pr_id=pr_id)
+        # Synchronous request with long timeout since PR-Agent runs on localhost
+        response = httpx.post(settings.PR_AGENT_REFINE_URL, json=payload, timeout=300.0)
+        response.raise_for_status()
+        
+        refined_findings = response.json().get("refined_findings", [])
+        log.info("received_refined_findings_from_pr_agent", pr_id=pr_id)
+        
+        print("\n=== REFINED FINDINGS RECEIVED FROM PR_AGENT ===")
+        print(json.dumps(refined_findings, indent=2))
+        print("==============================================\n")
+        
+        return {"refined_findings": refined_findings}
     except Exception as e:
-        log.error("failed_to_send_to_pr_agent", error=str(e))
+        log.error("failed_to_get_suggestions_from_pr_agent", error=str(e))
         return {"refined_findings": findings} # Fallback
-
-    # 2. Poll DB waiting for PR-Agent to call us back
-    timeout = 300
-    start_time = time.time()
-    
-    while time.time() - start_time < timeout:
-        db = SessionLocal()
-        try:
-            job = db.query(ReviewJob).filter(ReviewJob.id == state.job_id).first()
-            if job and job.refined_findings_received:
-                log.info("received_refined_findings_from_pr_agent", pr_id=pr_id)
-                
-                print("\n=== REFINED FINDINGS RECEIVED FROM PR_AGENT ===")
-                print(json.dumps(job.refined_findings, indent=2))
-                print("==============================================\n")
-                
-                return {"refined_findings": job.refined_findings}
-        finally:
-            db.close()
-            
-        time.sleep(5) # Poll every 5 seconds
-
-    log.error("timeout_waiting_for_pr_agent", pr_id=pr_id)
-    return {"refined_findings": findings} # Fallback if timeout

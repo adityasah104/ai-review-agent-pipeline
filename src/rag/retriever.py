@@ -8,9 +8,13 @@ def retrieve_guidelines(query: str, n_results: int = 3) -> List[str]:
     Returns a list of text strings.
     """
     collection = get_collection()
+    count = collection.count()
+    if count == 0:
+        return []
+        
     results = collection.query(
         query_texts=[query],
-        n_results=min(n_results, collection.count()),
+        n_results=min(n_results, count),
     )
     documents = results.get("documents", [[]])[0]
     return documents

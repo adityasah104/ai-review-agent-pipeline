@@ -6,5 +6,14 @@ if __name__ == "__main__":
     if not pr_id:
         raise ValueError("Missing SYSTEM_PULLREQUEST_PULLREQUESTID.")
         
-    state = {"pr_id": int(pr_id), "status": "PENDING"}
+    state = {
+        "job_id": int(os.environ.get("BUILD_BUILDID", "0")),
+        "pr_id": int(pr_id),
+        "repository_id": os.environ.get("AZURE_DEVOPS_REPO", "demo-project"),
+        "project": os.environ.get("AZURE_DEVOPS_PROJECT", "demo-project"),
+        "source_branch": os.environ.get("SYSTEM_PULLREQUEST_SOURCEBRANCH", ""),
+        "target_branch": os.environ.get("SYSTEM_PULLREQUEST_TARGETBRANCH", ""),
+        "status": "PENDING"
+    }
+    
     graph.invoke(state)

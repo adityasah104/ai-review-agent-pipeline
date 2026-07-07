@@ -105,6 +105,7 @@ Rules:
 - Only edit `{file_path}`. Do NOT touch any other file.
 - Keep all existing business logic intact.
 - Ensure the file remains syntactically valid after your changes.
+- CRITICAL SECURITY RULE: If you are fixing a hardcoded secret, NEVER leave the original secret as a fallback value (e.g., do NOT do `os.getenv('KEY', 'super_secret')`). Remove the secret entirely!
 """
 
             log.info("aider_llm_fix_file_start", file=file_path)
@@ -185,7 +186,9 @@ Rules:
         # ---------------------------------------------------------
         # Commit all successfully validated files in one commit
         # ---------------------------------------------------------
-        subprocess.run(["git", "add", "-A"], cwd=repo_path, check=True, capture_output=True)
+        if files_fixed:
+            for fixed_file in files_fixed:
+                subprocess.run(["git", "add", fixed_file], cwd=repo_path, check=True, capture_output=True)
 
         diff_result = subprocess.run(
             ["git", "diff", "--cached", "--quiet"],

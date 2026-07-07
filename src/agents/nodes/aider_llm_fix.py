@@ -109,75 +109,78 @@ Rules:
 
             log.info("aider_llm_fix_file_start", file=file_path)
 
-            aider_cmd = [
-                "aider",
-                "--yes",
-                "--no-gui",
-                "--no-show-release-notes",
-                "--no-show-model-warnings",
-                "--no-check-update",
-                "--no-auto-commits",
-                "--no-stream",
-                "--no-git",
-                "--map-tokens", "0",
-                "--edit-format", "diff",
-                "--lint-cmd", "python: ruff check",
-                "--auto-lint",
-                "--model", "bedrock/amazon.nova-pro-v1:0",
-                "--message", file_prompt,
-                file_path,
-            ]
+            # --- Retry Loop: 1 initial attempt + 2 retries (3 total) ---
+            for attempt in range(3):
+                aider_cmd = [
+                    "aider",
+                    "--yes",
+                    "--no-gui",
+                    "--no-show-release-notes",
+                    "--no-show-model-warnings",
+                    "--no-check-update",
+                    "--no-auto-commits",
+                    "--no-stream",
+                    "--no-git",
+                    "--map-tokens", "0",
+                    "--edit-format", "diff",
+                    "--lint-cmd", "python: ruff check",
+                    "--auto-lint",
+                    "--model", "bedrock/amazon.nova-pro-v1:0",
+                    "--message", file_prompt,
+                    file_path,
+                ]
 
-            result = subprocess.run(
-                aider_cmd,
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                stdin=subprocess.DEVNULL,
-            )
-            log.info("aider_llm_fix_file_output", file=file_path, returncode=result.returncode)
-
-            # Auto-format after each Aider run
-            subprocess.run(["ruff", "format", "."], cwd=repo_path, capture_output=True)
-            subprocess.run(["ruff", "check", "--fix", "--unsafe-fixes", "."], cwd=repo_path, capture_output=True)
-            if file_path.endswith(".sql"):
-                subprocess.run(
-                    ["sqlfluff", "fix", "models/", "--dialect", "ansi", "--templater", "jinja", "--force"],
-                    cwd=repo_path, capture_output=True
+                result = subprocess.run(
+                    aider_cmd,
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    stdin=subprocess.DEVNULL,
                 )
+                log.info("aider_llm_fix_file_output", file=file_path, attempt=attempt, returncode=result.returncode)
 
-            # --- Per-file Validation Gate ---
-            ruff_result = subprocess.run(
-                ["ruff", "check", "."], cwd=repo_path, capture_output=True, text=True
-            )
-            ruff_ok = ruff_result.returncode == 0
+                # Auto-format after each Aider run
+                subprocess.run(["ruff", "format", "."], cwd=repo_path, capture_output=True)
+                subprocess.run(["ruff", "check", "--fix", "--unsafe-fixes", "."], cwd=repo_path, capture_output=True)
+                if file_path.endswith(".sql"):
+                    subprocess.run(
+                        ["sqlfluff", "fix", "models/", "--dialect", "ansi", "--templater", "jinja", "--force"],
+                        cwd=repo_path, capture_output=True
+                    )
 
-            # Only run sqlfluff validation for SQL files — Python files don't need it
-            sqlfluff_ok = True
-            if file_path.endswith(".sql"):
-                sqlfluff_result = subprocess.run(
-                    ["sqlfluff", "lint", "models/", "--dialect", "ansi", "--templater", "jinja"],
-                    cwd=repo_path, capture_output=True, text=True
+                # --- Local CI Validation Check ---
+                ruff_result = subprocess.run(
+                    ["ruff", "check", "."], cwd=repo_path, capture_output=True, text=True
                 )
-                sqlfluff_ok = sqlfluff_result.returncode == 0
+                ruff_ok = ruff_result.returncode == 0
 
-            if not ruff_ok or not sqlfluff_ok:
-                # This file's changes broke something — discard ONLY this file
-                log.error(
-                    "aider_llm_fix_file_validation_failed",
-                    file=file_path,
-                    ruff_ok=ruff_ok,
-                    sqlfluff_ok=sqlfluff_ok,
-                    ruff_output=ruff_result.stdout[-300:],
-                )
-                subprocess.run(["git", "checkout", "--", file_path], cwd=repo_path, capture_output=True)
-                subprocess.run(["git", "clean", "-fd"], cwd=repo_path, capture_output=True)
-                files_skipped.append(file_path)
-                log.warning("aider_llm_fix_file_discarded", file=file_path)
-            else:
-                files_fixed.append(file_path)
-                log.info("aider_llm_fix_file_passed", file=file_path)
+                sqlfluff_ok = True
+                if file_path.endswith(".sql"):
+                    sqlfluff_result = subprocess.run(
+                        ["sqlfluff", "lint", "models/", "--dialect", "ansi", "--templater", "jinja"],
+                        cwd=repo_path, capture_output=True, text=True
+                    )
+                    sqlfluff_ok = sqlfluff_result.returncode == 0
+
+                if ruff_ok and sqlfluff_ok:
+                    # CI Passed! Keep the file.
+                    log.info("aider_llm_fix_file_passed", file=file_path, attempt=attempt)
+                    files_fixed.append(file_path)
+                    break
+                else:
+                    if attempt < 2:
+                        # Feed the CI error back to Aider
+                        log.warning("aider_llm_fix_ci_failed_retrying", file=file_path, attempt=attempt)
+                        file_prompt = "Your previous code fix introduced the following CI failures. Please fix them without breaking the original logic:\n\n"
+                        if not ruff_ok:
+                            file_prompt += f"Python Lint Error:\n{ruff_result.stdout[-500:]}\n"
+                        if not sqlfluff_ok:
+                            file_prompt += f"SQL Lint Error:\n{sqlfluff_result.stdout[-500:]}\n"
+                    else:
+                        # Out of retries! The user requested to KEEP the file anyway so the major fix isn't lost.
+                        log.warning("aider_llm_fix_max_retries_reached_keeping_file", file=file_path)
+                        files_fixed.append(file_path)
 
         # ---------------------------------------------------------
         # Commit all successfully validated files in one commit

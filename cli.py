@@ -1,7 +1,8 @@
 import os
+import asyncio
 from src.agents.graph import graph
 
-if __name__ == "__main__":
+async def main():
     pr_id = os.environ.get("SYSTEM_PULLREQUEST_PULLREQUESTID")
     if not pr_id:
         raise ValueError("Missing SYSTEM_PULLREQUEST_PULLREQUESTID.")
@@ -16,4 +17,7 @@ if __name__ == "__main__":
         "status": "PENDING"
     }
     
-    graph.invoke(state)
+    await graph.ainvoke(state)
+
+if __name__ == "__main__":
+    asyncio.run(main())

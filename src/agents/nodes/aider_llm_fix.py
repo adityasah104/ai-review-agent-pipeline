@@ -134,6 +134,7 @@ Rules:
                 capture_output=True,
                 text=True,
                 timeout=300,
+                stdin=subprocess.DEVNULL,
             )
             log.info("aider_llm_fix_file_output", file=file_path, returncode=result.returncode)
 

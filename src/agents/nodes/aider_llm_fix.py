@@ -73,8 +73,8 @@ async def run(state: PRReviewState) -> dict:
     # Filter: auto-fix minor, major, and critical that meet confidence threshold
     fixable_findings = [
         f for f in active_findings
-        if f.get("severity") in ("minor", "major", "critical")
-        and f.get("category") in ("code_quality", "performance", "security")
+        if str(f.get("severity", "")).lower() in ("minor", "major", "critical")
+        and str(f.get("category", "")).lower() in ("code_quality", "performance", "security")
         and float(f.get("confidence", 0.0)) >= settings.MIN_FIX_CONFIDENCE
     ]
 
@@ -300,12 +300,15 @@ Strict rules — follow all of them:
                 )
 
             if not fixed:
-                if _is_syntactically_valid(repo_path, file_path):
-                    # Retries exhausted, but the file still parses/runs — the
-                    # fix (often the important security/major one) is kept
-                    # rather than thrown away over a remaining lint/style nit.
-                    # This intentionally means the file may still fail lint
-                    # in your broader pipeline gate, if you have one.
+                has_major_critical = any(
+                    str(f.get("severity", "")).lower() in ("major", "critical")
+                    for f in file_findings
+                )
+                
+                if has_major_critical and _is_syntactically_valid(repo_path, file_path):
+                    # Retries exhausted, but the file still parses/runs and it contains
+                    # a major/critical fix. We keep it rather than throwing away an
+                    # important fix over a remaining lint/style nit.
                     files_fixed.append(file_path)
                     files_kept_with_warnings.append(file_path)
                     log.warning(

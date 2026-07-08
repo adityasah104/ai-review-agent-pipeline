@@ -1,3 +1,4 @@
+import re
 import subprocess
 import structlog
 from src.agents.state import PRReviewState
@@ -5,6 +6,58 @@ from src.config.settings import settings
 from src.azure_client.auth import get_azure_devops_token
 
 log = structlog.get_logger()
+
+# Max attempts per file: 1 initial try + up to this many feedback-corrected retries
+MAX_FIX_RETRIES = 2
+MAX_FIX_ATTEMPTS = MAX_FIX_RETRIES + 1
+
+_RUFF_CODE_RE = re.compile(r":\d+:\d+:\s+(\S+)")
+_SQLFLUFF_CODE_RE = re.compile(r"\b(?:L\d{3}|[A-Z]{2}\d{2})\b")
+
+
+def _ruff_codes(repo_path: str, file_path: str) -> set[str]:
+    """Return the set of ruff rule codes currently present in a single file."""
+    result = subprocess.run(
+        ["ruff", "check", file_path], cwd=repo_path, capture_output=True, text=True
+    )
+    return set(_RUFF_CODE_RE.findall(result.stdout))
+
+
+def _sqlfluff_codes(repo_path: str, file_path: str) -> set[str]:
+    """Return the set of sqlfluff rule codes currently present in a single file."""
+    result = subprocess.run(
+        ["sqlfluff", "lint", file_path, "--dialect", "ansi", "--templater", "jinja"],
+        cwd=repo_path, capture_output=True, text=True,
+    )
+    return set(_SQLFLUFF_CODE_RE.findall(result.stdout))
+
+
+def _is_syntactically_valid(repo_path: str, file_path: str) -> bool:
+    """
+    Hard floor check: does the file at least parse? This is deliberately a much
+    lower bar than passing lint — it only catches "this file is now broken and
+    would fail to run/build," not style or convention issues. Used so that a
+    genuine security/major fix isn't thrown away over a lint nit, while still
+    guaranteeing we never keep a file that can't even parse.
+    """
+    full_path = f"{repo_path.rstrip('/')}/{file_path}"
+    if file_path.endswith(".py"):
+        try:
+            import ast
+            with open(full_path, "r", encoding="utf-8") as fh:
+                ast.parse(fh.read())
+            return True
+        except (SyntaxError, OSError, UnicodeDecodeError):
+            return False
+    if file_path.endswith(".sql"):
+        result = subprocess.run(
+            ["sqlfluff", "parse", file_path, "--dialect", "ansi", "--templater", "jinja"],
+            cwd=repo_path, capture_output=True, text=True,
+        )
+        return result.returncode == 0
+    # Unknown file type — no parser available, assume valid rather than
+    # discarding a fix we have no way to actually validate.
+    return True
 
 
 async def run(state: PRReviewState) -> dict:
@@ -38,18 +91,6 @@ async def run(state: PRReviewState) -> dict:
             f"{finding.get('suggestion', finding.get('description', ''))}"
         )
 
-    aider_prompt = f"""
-Apply the following code quality improvements to the changed files.
-
-Instructions:
-{chr(10).join(fix_instructions)}
-
-Rules you must follow:
-- Apply the suggested fixes safely without breaking existing business logic.
-- Ensure all Python files remain syntactically valid after changes.
-- Ensure all SQL files remain syntactically valid after changes.
-"""
-
     repo_path = settings.DEMO_REPO_PATH
     branch = state.source_branch.replace("refs/heads/", "")
 
@@ -82,6 +123,7 @@ Rules you must follow:
         # ---------------------------------------------------------
         files_fixed = []
         files_skipped = []
+        files_kept_with_warnings = []
 
         for file_path in files_to_fix:
 
@@ -97,21 +139,92 @@ Rules you must follow:
                     f"{finding.get('suggestion', finding.get('description', ''))}"
                 )
 
-            file_prompt = f"""Fix the following issues in the file `{file_path}`:
+            base_file_prompt = f"""You are a precise, conservative code-fixing assistant working on exactly ONE file.
+
+First, read the current content of `{file_path}` carefully before changing anything.
+Do not rely on assumed line numbers below if the file content has shifted — locate
+each issue by matching its description to the actual current code, not by line
+number alone.
+
+Fix ONLY the following reviewer-identified issues in `{file_path}`:
 
 {chr(10).join(file_instructions)}
 
-Rules:
-- Only edit `{file_path}`. Do NOT touch any other file.
-- Keep all existing business logic intact.
-- Ensure the file remains syntactically valid after your changes.
-- CRITICAL SECURITY RULE: If you are fixing a hardcoded secret, NEVER leave the original secret as a fallback value (e.g., do NOT do `os.getenv('KEY', 'super_secret')`). Remove the secret entirely!
+Strict rules — follow all of them:
+1. Only edit `{file_path}`. Do NOT touch, create, or delete any other file.
+2. Make ONLY the minimal change needed to resolve each listed issue. Do not
+   refactor, rename, reformat, reorganize, or "clean up" any code that isn't
+   part of a listed issue.
+3. If a listed issue does not clearly match the current code (already fixed,
+   line shifted to something unrelated, description doesn't apply), SKIP that
+   specific issue. Do not guess a fix, do not invent a change to something else
+   to compensate, and do not fabricate line numbers, variables, or file content
+   that don't actually exist.
+4. Security issues are the highest priority and must be fixed with a real,
+   working remediation — never by deleting/commenting out/weakening the
+   vulnerable logic, never by adding lint-suppression comments (e.g. `# noqa`,
+   `# nosec`), and never with a bare `except: pass`. Do not remove or bypass
+   authentication, authorization, input validation, sanitization, or encryption
+   logic. Do not introduce any new vulnerability while fixing this or any other
+   issue.
+5. Keep all existing business logic, function signatures, and behavior intact
+   except where a listed issue explicitly requires a change.
+6. If you are not confident a fix is correct, leave that issue unresolved
+   rather than applying a speculative or partial change.
+7. Ensure the file remains syntactically valid after your changes (valid Python
+   or valid SQL, as applicable).
+8. Do not add comments narrating what you changed unless a comment is required
+   to explain a non-obvious security fix.
+9. Write the fix in a style that passes lint on the first attempt, so it is not
+   silently discarded by the validation gate:
+   - Python: follow PEP 8 — correct indentation (4 spaces, no tabs), no trailing
+     whitespace, no unused imports/variables, imports at the top and properly
+     ordered (stdlib, then third-party, then local), consistent quote style
+     matching the rest of the file, blank lines between top-level defs/classes,
+     line length within the project's configured limit, and no bare `except:`.
+     Match the formatting `ruff format` would already produce so `ruff check .`
+     passes cleanly.
+   - SQL: follow the `sqlfluff` `ansi` dialect with the `jinja` templater —
+     consistent keyword casing (match the surrounding file's existing casing
+     convention), one clause per line for SELECT/FROM/WHERE/JOIN, consistent
+     indentation, no trailing commas issues, no trailing whitespace, and
+     terminate statements consistently with the rest of the file. Match the
+     formatting `sqlfluff fix` would already produce so `sqlfluff lint` passes
+     cleanly.
+   - In both cases, mirror the existing code style already used elsewhere in
+     the file/repo rather than introducing a different convention.
+10. Never leak or reintroduce secrets while "fixing" a hardcoded-secret finding.
+    Replace the secret with a real environment/config lookup (e.g.
+    `os.environ["API_TOKEN"]`) with NO default value containing the actual
+    secret, placeholder secret-shaped string, or any part of the original
+    value. Do not move the secret into a comment, log line, error message, or
+    a getenv() fallback default either.
 """
 
             log.info("aider_llm_fix_file_start", file=file_path)
 
-            # --- Retry Loop: 1 initial attempt + 2 retries (3 total) ---
-            for attempt in range(3):
+            # Baseline lint state BEFORE Aider touches this file. Pre-existing
+            # issues elsewhere in the file are not Aider's fault and must not
+            # cause a good fix (e.g. a security patch) to be discarded — we
+            # only fail the file if Aider's edit introduces NEW rule codes
+            # that weren't already present.
+            is_sql = file_path.endswith(".sql")
+            baseline_ruff = set() if is_sql else _ruff_codes(repo_path, file_path)
+            baseline_sqlfluff = _sqlfluff_codes(repo_path, file_path) if is_sql else set()
+
+            fixed = False
+            feedback = ""
+
+            for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
+                prompt = base_file_prompt
+                if feedback:
+                    prompt += (
+                        "\n\nYour previous attempt introduced NEW lint errors that were not "
+                        f"present before your change:\n{feedback}\n\n"
+                        "Fix these specific errors without reintroducing the original issue, "
+                        "and without touching anything else in the file."
+                    )
+
                 aider_cmd = [
                     "aider",
                     "--yes",
@@ -122,12 +235,12 @@ Rules:
                     "--no-auto-commits",
                     "--no-stream",
                     "--no-git",
-                    "--map-tokens", "0",
+                    "--map-tokens", "1024",
                     "--edit-format", "diff",
                     "--lint-cmd", "python: ruff check",
                     "--auto-lint",
                     "--model", "bedrock/amazon.nova-pro-v1:0",
-                    "--message", file_prompt,
+                    "--message", prompt,
                     file_path,
                 ]
 
@@ -137,58 +250,88 @@ Rules:
                     capture_output=True,
                     text=True,
                     timeout=300,
+                    # Aider is an interactive CLI. If it hits an unexpected
+                    # condition (e.g. a Bedrock auth error) it can drop into a
+                    # (Y/n) prompt. With no stdin attached in CI, that read
+                    # returns EOF immediately instead of hanging until the
+                    # timeout kills the process 5 minutes later.
                     stdin=subprocess.DEVNULL,
                 )
-                log.info("aider_llm_fix_file_output", file=file_path, attempt=attempt, returncode=result.returncode)
-
-                # Auto-format after each Aider run
-                subprocess.run(["ruff", "format", "."], cwd=repo_path, capture_output=True)
-                subprocess.run(["ruff", "check", "--fix", "--unsafe-fixes", "."], cwd=repo_path, capture_output=True)
-                if file_path.endswith(".sql"):
-                    subprocess.run(
-                        ["sqlfluff", "fix", "models/", "--dialect", "ansi", "--templater", "jinja", "--force"],
-                        cwd=repo_path, capture_output=True
-                    )
-
-                # --- Local CI Validation Check ---
-                ruff_result = subprocess.run(
-                    ["ruff", "check", "."], cwd=repo_path, capture_output=True, text=True
+                log.info(
+                    "aider_llm_fix_file_output",
+                    file=file_path, attempt=attempt, returncode=result.returncode,
                 )
-                ruff_ok = ruff_result.returncode == 0
 
-                sqlfluff_ok = True
-                if file_path.endswith(".sql"):
-                    sqlfluff_result = subprocess.run(
-                        ["sqlfluff", "lint", "models/", "--dialect", "ansi", "--templater", "jinja"],
-                        cwd=repo_path, capture_output=True, text=True
+                # Auto-format only this file after each Aider run, so we don't
+                # touch unrelated files' working-tree state.
+                subprocess.run(["ruff", "format", file_path], cwd=repo_path, capture_output=True)
+                subprocess.run(
+                    ["ruff", "check", "--fix", "--unsafe-fixes", file_path],
+                    cwd=repo_path, capture_output=True,
+                )
+                if is_sql:
+                    subprocess.run(
+                        ["sqlfluff", "fix", file_path, "--dialect", "ansi", "--templater", "jinja", "--force"],
+                        cwd=repo_path, capture_output=True,
                     )
-                    sqlfluff_ok = sqlfluff_result.returncode == 0
 
-                if ruff_ok and sqlfluff_ok:
-                    # CI Passed! Keep the file.
-                    log.info("aider_llm_fix_file_passed", file=file_path, attempt=attempt)
+                # --- Per-file Validation Gate (baseline-aware) ---
+                new_ruff = set() if is_sql else _ruff_codes(repo_path, file_path)
+                new_sqlfluff = _sqlfluff_codes(repo_path, file_path) if is_sql else set()
+
+                introduced_ruff = new_ruff - baseline_ruff
+                introduced_sqlfluff = new_sqlfluff - baseline_sqlfluff
+
+                if not introduced_ruff and not introduced_sqlfluff:
                     files_fixed.append(file_path)
+                    fixed = True
+                    log.info("aider_llm_fix_file_passed", file=file_path, attempt=attempt)
                     break
+
+                feedback = (
+                    f"Ruff codes newly introduced: {sorted(introduced_ruff)}\n"
+                    f"Sqlfluff codes newly introduced: {sorted(introduced_sqlfluff)}"
+                )
+                log.warning(
+                    "aider_llm_fix_file_attempt_failed",
+                    file=file_path, attempt=attempt,
+                    introduced_ruff=sorted(introduced_ruff),
+                    introduced_sqlfluff=sorted(introduced_sqlfluff),
+                )
+
+            if not fixed:
+                if _is_syntactically_valid(repo_path, file_path):
+                    # Retries exhausted, but the file still parses/runs — the
+                    # fix (often the important security/major one) is kept
+                    # rather than thrown away over a remaining lint/style nit.
+                    # This intentionally means the file may still fail lint
+                    # in your broader pipeline gate, if you have one.
+                    files_fixed.append(file_path)
+                    files_kept_with_warnings.append(file_path)
+                    log.warning(
+                        "aider_llm_fix_file_kept_with_lint_warnings",
+                        file=file_path, remaining_issues=feedback,
+                    )
                 else:
-                    if attempt < 2:
-                        # Feed the CI error back to Aider
-                        log.warning("aider_llm_fix_ci_failed_retrying", file=file_path, attempt=attempt)
-                        file_prompt = "Your previous code fix introduced the following CI failures. Please fix them without breaking the original logic:\n\n"
-                        if not ruff_ok:
-                            file_prompt += f"Python Lint Error:\n{ruff_result.stdout[-500:]}\n"
-                        if not sqlfluff_ok:
-                            file_prompt += f"SQL Lint Error:\n{sqlfluff_result.stdout[-500:]}\n"
-                    else:
-                        # Out of retries! The user requested to KEEP the file anyway so the major fix isn't lost.
-                        log.warning("aider_llm_fix_max_retries_reached_keeping_file", file=file_path)
-                        files_fixed.append(file_path)
+                    # The file is actually broken (won't parse) — this is the
+                    # one case we still revert, since keeping it wouldn't
+                    # preserve the fix, it would just break the build.
+                    subprocess.run(["git", "checkout", "--", file_path], cwd=repo_path, capture_output=True)
+                    subprocess.run(["git", "clean", "-fd", "--", file_path], cwd=repo_path, capture_output=True)
+                    files_skipped.append(file_path)
+                    log.error(
+                        "aider_llm_fix_file_discarded_unparseable",
+                        file=file_path, last_feedback=feedback,
+                    )
 
         # ---------------------------------------------------------
-        # Commit all successfully validated files in one commit
+        # Commit only the files we actually fixed and validated —
+        # never `git add -A`, which would also stage unrelated
+        # generated artifacts (e.g. a chroma_db/ vector store) that
+        # happen to sit untracked in the working directory.
         # ---------------------------------------------------------
         if files_fixed:
-            for fixed_file in files_fixed:
-                subprocess.run(["git", "add", fixed_file], cwd=repo_path, check=True, capture_output=True)
+            subprocess.run(["git", "add", "--", *files_fixed], cwd=repo_path, check=True, capture_output=True)
 
         diff_result = subprocess.run(
             ["git", "diff", "--cached", "--quiet"],
@@ -196,11 +339,15 @@ Rules:
         )
 
         if diff_result.returncode != 0:
-            skipped_note = f"\nSkipped (hallucination detected): {files_skipped}" if files_skipped else ""
+            skipped_note = f"\nDiscarded (unparseable after retries): {files_skipped}" if files_skipped else ""
+            warning_note = (
+                f"\nCommitted with unresolved lint warnings: {files_kept_with_warnings}"
+                if files_kept_with_warnings else ""
+            )
             commit_msg = (
                 f"fix(ai-review): apply {len(fixable_findings)} auto-fix suggestion(s)\n\n"
                 f"Applied by AI Review Agent using Aider + Amazon Bedrock Nova Pro.\n"
-                f"Files fixed: {files_fixed}{skipped_note}\n"
+                f"Files fixed: {files_fixed}{skipped_note}{warning_note}\n"
                 f"PR: {state.pr_url}"
             )
             subprocess.run(
@@ -213,9 +360,13 @@ Rules:
             )
             summary = (
                 f"✅ Fixed {len(files_fixed)} file(s): {files_fixed}."
-                + (f" ⚠️ Skipped {len(files_skipped)} file(s) due to hallucination: {files_skipped}." if files_skipped else "")
+                + (f" ⚠️ {len(files_kept_with_warnings)} file(s) committed with unresolved lint warnings (fix kept, not discarded): {files_kept_with_warnings}." if files_kept_with_warnings else "")
+                + (f" 🛑 Discarded {len(files_skipped)} file(s) as unparseable after retries: {files_skipped}." if files_skipped else "")
             )
-            log.info("aider_llm_fix_committed", branch=branch, fixed=files_fixed, skipped=files_skipped)
+            log.info(
+                "aider_llm_fix_committed", branch=branch, fixed=files_fixed,
+                kept_with_warnings=files_kept_with_warnings, skipped=files_skipped,
+            )
         else:
             summary = "ℹ️ Aider ran but found no changes to apply."
             log.info("aider_llm_fix_no_changes")

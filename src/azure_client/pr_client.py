@@ -153,7 +153,9 @@ async def create_pull_request(
     """
     async with httpx.AsyncClient(timeout=30) as client:
         headers = await get_auth_headers()
-        reviewers = [{"id": rid} for rid in (reviewer_ids or [])]
+        # ADO resolves reviewers by uniqueName (email) — NOT by id field when passing an email.
+        # Using uniqueName ensures ADO sends the notification email to the developer.
+        reviewers = [{"uniqueName": rid} for rid in (reviewer_ids or []) if rid]
         body = {
             "title": title,
             "description": description,

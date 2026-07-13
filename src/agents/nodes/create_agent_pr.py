@@ -88,5 +88,7 @@ async def run(state: PRReviewState) -> dict:
         return {"agent_pr_url": agent_pr_url, "status": "DONE"}
 
     except Exception as e:
-        log.error("create_agent_pr_error", error=str(e))
+        import traceback
+        log.error("create_agent_pr_error", error=str(e), traceback=traceback.format_exc())
+        # Don't crash the pipeline — log and continue to publish_review
         return {"agent_pr_url": "", "status": "DONE", "error": f"Agent PR creation failed: {e}"}

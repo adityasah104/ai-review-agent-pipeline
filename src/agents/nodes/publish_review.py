@@ -52,7 +52,7 @@ def _build_comment(state: PRReviewState) -> str:
 
     lines.append("## AI Code Review")
     lines.append("")
-    # Tagging the author (in ADO, the PR author will be notified by this comment natively, but we add a visual tag too)
+    # Tag the actual PR author by their ADO unique name
     author_tag = f"@{state.pr_author_id}" if state.pr_author_id else "@Author"
     lines.append(f"cc: {author_tag}")
     lines.append("")

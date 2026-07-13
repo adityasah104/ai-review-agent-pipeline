@@ -61,16 +61,20 @@ def _build_comment(state: PRReviewState) -> str:
         lines.append("> **Warning:** Attempted CI fixes but pipeline is still failing. Manual intervention required.")
         lines.append("")
 
-    lines.append("Review-agent found these issues and applied fixes on a separate agent branch:")
     lines.append("")
 
     # Use refined findings if available, otherwise fallback to raw findings
     findings = state.refined_findings if state.refined_findings else state.findings
     
-    if findings:
-        _findings_table(findings, lines)
-    else:
-        lines.append("No issues were identified.")
+    if findings:                                                                                                                             
+            lines.append("Review-agent found these issues and applied fixes on a separate agent branch:")                                        
+            lines.append("")                                                                                                                     
+            _findings_table(findings, lines)                                                                                                     
+    else:                                                                                                                                    
+            # If there are no findings, output a clear "Good to go" message!                                                                     
+        lines.append("### ✅ Code is Good to Go!")                                                                                           
+        lines.append("")                                                                                                                     
+        lines.append("I have reviewed the changes in this PR and found no issues. No agent branch or fixes were needed.")                    
         lines.append("")
 
     return "\n".join(lines)

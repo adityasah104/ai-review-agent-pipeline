@@ -53,14 +53,15 @@ def _build_comment(state: PRReviewState) -> str:
     lines.append("## AI Code Review")
     lines.append("")
     # Tagging the author (in ADO, the PR author will be notified by this comment natively, but we add a visual tag too)
-    lines.append("cc: @Author")
+    author_tag = f"@{state.pr_author_id}" if state.pr_author_id else "@Author"
+    lines.append(f"cc: {author_tag}")
     lines.append("")
     
     if state.status == "CI_FIX_GAVE_UP":
         lines.append("> **Warning:** Attempted CI fixes but pipeline is still failing. Manual intervention required.")
         lines.append("")
 
-    lines.append("Review-agent found these issues and applied these fixes in your code:")
+    lines.append("Review-agent found these issues and applied fixes on a separate agent branch:")
     lines.append("")
 
     # Use refined findings if available, otherwise fallback to raw findings

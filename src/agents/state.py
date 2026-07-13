@@ -80,3 +80,7 @@ class PRReviewState(BaseModel):
 
     #NEW Hybrid Integration
     refined_findings: List[Dict[str, Any]] = Field(default_factory=list)
+        # Agent branch protection (Phase 2)
+    agent_branch: str = ""      # e.g. "agent/feature/new-update"
+    pr_author_id: str = ""      # ADO unique name e.g. "john.doe@company.com"
+    agent_pr_url: str = ""      # URL of the PR the agent created

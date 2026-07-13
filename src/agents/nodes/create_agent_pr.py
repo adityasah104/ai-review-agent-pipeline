@@ -58,14 +58,27 @@ async def run(state: PRReviewState) -> dict:
         pr_description = _agent_pr_description(state)
         reviewer_ids = [state.pr_author_id] if state.pr_author_id else []
 
-        agent_pr = await create_pull_request(
-            repository_id=state.repository_id,
-            source_branch=state.agent_branch,
-            target_branch=developer_branch,
-            title=pr_title,
-            description=pr_description,
-            reviewer_ids=reviewer_ids,
-        )
+        try:
+            agent_pr = await create_pull_request(
+                repository_id=state.repository_id,
+                source_branch=state.agent_branch,
+                target_branch=developer_branch,
+                title=pr_title,
+                description=pr_description,
+                reviewer_ids=reviewer_ids,
+            )
+        except Exception as api_err:
+            log.warning("create_agent_pr_with_reviewers_failed", error=str(api_err))
+            log.info("create_agent_pr_fallback_no_reviewers")
+            # Fallback: create the PR without reviewers (the @mention comment will still notify them)
+            agent_pr = await create_pull_request(
+                repository_id=state.repository_id,
+                source_branch=state.agent_branch,
+                target_branch=developer_branch,
+                title=pr_title,
+                description=pr_description,
+                reviewer_ids=[],
+            )
         agent_pr_id = agent_pr.get("pullRequestId", "")
         org = settings.AZURE_DEVOPS_ORG
         project = settings.AZURE_DEVOPS_PROJECT

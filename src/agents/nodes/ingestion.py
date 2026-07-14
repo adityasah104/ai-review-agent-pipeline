@@ -47,7 +47,7 @@ async def run(state: PRReviewState) -> dict:
                 continue
 
             # Skip vector DB/chroma directories
-            if "chromadb" in path.lower() or "chroma" in path.lower():
+            if "chroma_db" in path.lower() or "chroma" in path.lower():
                 continue
 
             changed_files.append({

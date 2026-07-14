@@ -204,7 +204,7 @@ async def run(state: PRReviewState) -> dict:
        fixed, line shifted to something unrelated, description doesn't apply),                                                                   
        SKIP that specific issue. Do not guess a fix, do not invent a change to                                                                   
        something else to compensate, and do not fabricate line numbers,                                                                          
-       variables, or file content that don't actually exist.                                                                                     
+       variables, or file content that don't actually exist.
     7. Security issues are the highest priority and must be fixed with a real,                                                                   
        working remediation — never by deleting/commenting out/weakening the                                                                      
        vulnerable logic, never by adding lint-suppression comments (e.g. # noqa,                                                                 
@@ -212,7 +212,12 @@ async def run(state: PRReviewState) -> dict:
        authentication, authorization, input validation, sanitization, or encryption                                                              
        logic. Do not introduce any new vulnerability while fixing this or any other                                                              
        issue.                                                                                                                                    
-    8. Keep all existing business logic, function signatures, and behavior intact                                                                
+    8. NEVER add comments that simply restate or echo the finding's description 
+       or suggestion. If a finding is a generic instruction like "ensure the function 
+       is correctly defined and used" or "validate the input," do NOT paste that 
+       as a `# comment` into the code. If you cannot apply a real, functional 
+       code change to fix the issue, you must SKIP the issue and make NO changes.
+    9. Keep all existing business logic, function signatures, and behavior intact
        except where a listed issue explicitly requires a change.                                                                                 
     9. If you are not confident a fix is correct, leave that issue unresolved                                                                    
        rather than applying a speculative or partial change.                                                                                     

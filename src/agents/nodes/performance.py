@@ -90,6 +90,7 @@ async def run(state: PRReviewState) -> dict:
     Do NOT flag pre-existing issues in unchanged context lines.
     If an issue does not absolutely require a code change, IGNORE IT.
     Before returning a finding, double-check it does not violate any of the CRITICAL RULES above.
+    NEVER emit generic, unactionable advice like "Ensure the function is correctly defined and used". If a bug isn't explicitly identifiable, SKIP IT.
     It is far better to return [] than to report a false or unnecessary finding.
   
     Return your findings as a JSON array. Each finding must have:

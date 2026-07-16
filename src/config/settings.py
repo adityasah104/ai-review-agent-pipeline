@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     SQLITE_DB_PATH: str = "./review_agent.db"
 
     # Aider
-    AIDER_MAX_CI_RETRIES: int = 2
+    AIDER_MAX_CI_RETRIES: int = 4
     MIN_FIX_CONFIDENCE: float = 0.95
 
     # New Hybrid Integration

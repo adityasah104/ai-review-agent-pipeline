@@ -19,7 +19,7 @@ CATEGORY_LABEL = {
 }
 
 
-def _findings_table(findings: list, lines: list) -> None:
+def _findings_table(findings: list, lines: list, show_skipped: bool = False) -> None:
     """Renders a single markdown table with findings and their corresponding fixes."""
     lines.append("| Severity | File | Location | Confidence | Issue | Fix Applied |")
     lines.append("|----------|------|----------|------------|-------|-------------|")
@@ -37,9 +37,7 @@ def _findings_table(findings: list, lines: list) -> None:
         desc      = f.get("description", "").replace("|", "\\|")
         suggestion = f.get("suggestion", "").replace("|", "\\|")
 
-        skipped = ""
-        if conf_val < settings.MIN_FIX_CONFIDENCE:
-            skipped = " *(auto-fix skipped)*"
+        skipped = " *(auto-fix skipped)*" if show_skipped else ""
 
         lines.append(
             f"| {badge} | `{file_path}` | {line_hint} | {conf_pct} | {desc} | {suggestion}{skipped} |"
@@ -63,19 +61,41 @@ def _build_comment(state: PRReviewState) -> str:
 
     lines.append("")
 
-    # Use refined findings if available, otherwise fallback to raw findings
     findings = state.refined_findings if state.refined_findings else state.findings
     
-    if findings:                                                                                                                             
-            lines.append("Review-agent found these issues and applied fixes on a separate agent branch:")                                        
-            lines.append("")                                                                                                                     
-            _findings_table(findings, lines)                                                                                                     
-    else:                                                                                                                                    
-            # If there are no findings, output a clear "Good to go" message!                                                                     
-        lines.append("### ✅ Code is Good to Go!")                                                                                           
-        lines.append("")                                                                                                                     
-        lines.append("I have reviewed the changes in this PR and found no issues. No agent branch or fixes were needed.")                    
+    fixed_findings = []
+    skipped_findings = []
+    
+    for f in findings:
+        conf_val = float(f.get("confidence", 0.0))
+        if conf_val >= settings.MIN_FIX_CONFIDENCE:
+            fixed_findings.append(f)
+        else:
+            skipped_findings.append(f)
+            
+    if fixed_findings:
+        lines.append("### 🛠️ Issues Found & Fixed")
+        lines.append("The review agent identified high-confidence issues and has applied automated fixes on a separate agent branch:")
         lines.append("")
+        _findings_table(fixed_findings, lines, show_skipped=False)
+        
+        if skipped_findings:
+            lines.append("### ⚠️ Potential Improvements (Manual Review Required)")
+            lines.append("The following items were identified as potential issues. Due to lower confidence scores, automated fixes were not applied. Please review them manually:")
+            lines.append("")
+            _findings_table(skipped_findings, lines, show_skipped=True)
+            
+    else:
+        lines.append("### ✅ Code Review Complete")
+        lines.append("")
+        lines.append("The review agent analyzed the changes in this pull request and found 0 high-confidence issues. No automated fixes or agent branches were necessary.")
+        lines.append("")
+        
+        if skipped_findings:
+            lines.append("### ⚠️ Potential Improvements (Manual Review Required)")
+            lines.append("The following items were identified as potential improvements or edge cases. As they did not meet the confidence threshold for auto-fixing, please review them manually:")
+            lines.append("")
+            _findings_table(skipped_findings, lines, show_skipped=True)
 
     return "\n".join(lines)
 

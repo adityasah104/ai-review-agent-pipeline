@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # Aider
     AIDER_MAX_CI_RETRIES: int = 2
-    MIN_FIX_CONFIDENCE: float = 0.85
+    MIN_FIX_CONFIDENCE: float = 0.95
 
     # New Hybrid Integration
     PR_AGENT_REFINE_URL: str = ""

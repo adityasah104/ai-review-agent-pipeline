@@ -18,8 +18,9 @@ def _agent_pr_description(state: PRReviewState) -> str:
         f"based on issues found in the original PR: {state.pr_url}"
     )
     lines.append("")
-    if state.pr_author_id:
-        lines.append(f"@{state.pr_author_id} — please review these changes before merging.")
+    if state.pr_author_id and state.pr_author_name:
+        mention = f'<a href="#" data-vss-mention="version:2.0,{state.pr_author_id}">@{state.pr_author_name}</a>'
+        lines.append(f"{mention} — please review these changes before merging.")
     else:
         lines.append("Developer — please review these changes before merging.")
     lines.append("")
@@ -86,7 +87,7 @@ async def run(state: PRReviewState) -> dict:
         agent_pr_url = f"https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{agent_pr_id}"
         log.info("create_agent_pr_created", pr_id=agent_pr_id, url=agent_pr_url)
 
-        author_mention = f"@{state.pr_author_id}" if state.pr_author_id else "Developer"
+        author_mention = f'<a href="#" data-vss-mention="version:2.0,{state.pr_author_id}">@{state.pr_author_name}</a>' if (state.pr_author_id and state.pr_author_name) else "Developer"
         link_comment = (
             f"## AI Review Agent — Fix Branch Ready\n\n"
             f"{author_mention} — The AI Review Agent has analysed this PR and applied fixes "

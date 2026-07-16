@@ -23,10 +23,12 @@ async def run(state: PRReviewState) -> dict:
 
         # Fetch PR author for @mention on the agent PR
         pr_author_id = ""
+        pr_author_name = ""
         try:
             pr_meta = await get_pr_metadata(state.repository_id, state.pr_id)
-            pr_author_id = pr_meta.get("createdBy", {}).get("uniqueName", "")
-            log.info("ingestion_pr_author", author=pr_author_id)
+            pr_author_id = pr_meta.get("createdBy", {}).get("id", "")
+            pr_author_name = pr_meta.get("createdBy", {}).get("displayName", "")
+            log.info("ingestion_pr_author", author=pr_author_name, author_id=pr_author_id)
         except Exception as e:
             log.warning("ingestion_pr_author_failed", error=str(e))
 
@@ -103,6 +105,7 @@ async def run(state: PRReviewState) -> dict:
             "file_contents": file_contents,
             "file_diffs": file_diffs,
             "pr_author_id": pr_author_id,
+            "pr_author_name": pr_author_name,
             "status": "INGESTED",
         }
 

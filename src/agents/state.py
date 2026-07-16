@@ -83,5 +83,6 @@ class PRReviewState(BaseModel):
 
     # Agent branch protection (Phase 2)
     agent_branch: str = ""      # e.g. "agent/feature/new-update"
-    pr_author_id: str = ""      # ADO unique name e.g. "john.doe@company.com"
+    pr_author_id: str = ""      # ADO user GUID for @mention
+    pr_author_name: str = ""    # ADO display name
     agent_pr_url: str = ""      # URL of the PR the agent created

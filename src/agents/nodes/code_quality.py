@@ -70,7 +70,7 @@ CRITICAL RULES (violating any of these makes your review invalid):
    normal, acceptable, and often correct result.
 2. DO NOT change or complain about business logic. If a developer explicitly selects
    specific columns (e.g., SELECT col1, col2), do not suggest changing it, renaming
-   it, reordering it, or adding/removing columns from it.
+   it, reordering it, or adding/removing columns from it. 
 3. In SQL, ONLY flag SELECT * as a bad practice regarding column selection. Never
    complain about explicit column selections — an explicit column list is always
    correct, no matter how it's styled or ordered.

@@ -45,16 +45,14 @@ The agent operates entirely in the background. A developer opens a Pull Request,
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **API Server** | FastAPI + Uvicorn | Receives Azure DevOps webhooks |
+| **Pipeline Entrypoint** | CLI (`cli.py`) | Invoked directly by Azure DevOps Pipelines |
 | **Agent Orchestration** | LangGraph (StateGraph) | Controls the multi-step agent workflow |
 | **LLM** | Amazon Bedrock — Nova Pro | Powers code review and fix generation |
 | **Code Fixer** | Aider v0.86.2 | Applies LLM-generated fixes to actual files |
 | **Python Linter** | Ruff | Validates and auto-formats Python code |
 | **SQL Linter** | SQLFluff | Validates and auto-formats SQL/dbt models |
-| **Authentication** | Microsoft Entra ID (Service Principal) | Secure OAuth token generation for ADO |
+| **Authentication** | Azure DevOps native Access Token | Grants script direct permission to push |
 | **Version Control** | Azure DevOps Git | Source of truth for all PRs and commits |
-| **Database** | SQLite | Stores job queue, PR metadata, run history |
-| **Webhook Tunnel** | Ngrok | Exposes local server to Azure DevOps |
 | **Logging** | Structlog | Structured JSON logging throughout |
 
 ---
@@ -64,37 +62,26 @@ The agent operates entirely in the background. A developer opens a Pull Request,
 ```
 Azure DevOps (PR Created)
          │
-         │  POST /webhook/azure/pr
+         │  Triggers `ai-review.yml` pipeline
          ▼
 ┌─────────────────────────────┐
-│        FastAPI Server       │
-│        (main.py :8000)      │
+│       Pipeline Runner       │
 │                             │
-│  Webhook → Job Queue        │
-│  (SQLite background worker) │
+│  Native CI Validation       │
+│  (ruff & sqlfluff)          │
 └────────────┬────────────────┘
              │
              ▼
 ┌─────────────────────────────────────────────────────────┐
 │                    LangGraph StateGraph                  │
+│                    (Invoked via cli.py)                 │
 │                                                         │
 │  START                                                  │
 │    │                                                    │
 │    ▼                                                    │
-│  [pr_ingestion] ──────────────────────────────────────► │
+│  [pr_ingestion]                                         │
 │    │                                                    │
 │    ▼                                                    │
-│  [ci_status] ◄──────────────────────────────────────── │
-│    │                                                    │
-│    ├── CI Passed ──────────────────────────────────────►│
-│    │                                                    │
-│    └── CI Failed                                        │
-│              │                                          │
-│              ▼                                          │
-│         [aider_ci_fix] (Python via AI, SQL via sqlfluff) ── push fix ──► Azure DevOps    │
-│              │                                          │
-│              └──► [ci_status] (loop, max 2 retries)    │
-│                                                         │
 │  [context_retrieval]                                    │
 │    │                                                    │
 │    ├──► [code_quality]      ─────────────────────────► │
@@ -103,7 +90,7 @@ Azure DevOps (PR Created)
 │                   │                                     │
 │                   ▼  (fan-in — all findings merged)     │
 │           [fetch_pr_agent_suggestions]                  │
-│           (Sends to PR-Agent for refinement)            │
+│           (Sends to Local PR-Agent for refinement)      │
 │                   │                                     │
 │                   ▼                                     │
 │           [aider_llm_fix]                               │
@@ -120,39 +107,19 @@ Azure DevOps (PR Created)
 
 ## 4. Agent Flow (Step by Step)
 
-### Step 1 — Webhook Received
-Azure DevOps sends a `git.pullrequest.created` event to `POST /webhook/azure/pr`.  
-The server validates the event, creates a job in SQLite, and enqueues it.
+### Step 1 — Pipeline Triggered
+Azure DevOps triggers the `ai-review.yml` pipeline automatically upon PR creation or update. The pipeline executes native CI checks first.
 
 ### Step 2 — PR Ingestion (`ingestion.py`)
 - Fetches the list of changed files from Azure DevOps REST API
 - Filters to only `.py` and `.sql` files
 - Reads file contents for later analysis
 
-### Step 3 — CI Status Check (`ci_status.py`)
-- Polls the Azure DevOps Builds API for the latest pipeline run on the PR branch
-- Smartly checks both standard branch builds (`refs/heads/branch`) and PR validation builds (`refs/pull/<pr_id>/merge`)
-- Waits up to 150 seconds for the build to complete
-- Returns `ci_passed: True/False` and the raw CI log summary
-
-### Step 4 — CI Auto-Fix Loop (`aider_ci_fix.py`)
-*Only triggered if CI failed.*
-- Processes **one file at a time** — each changed file gets its own focused Aider call
-- **For SQL files**: Bypasses the AI entirely and runs `sqlfluff fix` locally to prevent infinite auto-lint loops and save tokens.
-- **For Python files**: Each file prompt contains the CI log + strict instruction to only touch that file
-- After each file: runs `ruff format` + `ruff check --fix` to auto-clean Python
-- Commits all per-file fixes in a single Git commit and pushes to the feature branch
-- Graph loops back to Step 3 (re-checks CI)
-- **Maximum 2 retry attempts** (`AIDER_MAX_CI_RETRIES=2`)
-- If retries exhausted, agent force-continues to review anyway
-
-> ⚠️ **Why per-file?** Sending all files at once caused Nova Pro to hit its 10,000 output token limit and hallucinate fixes to unrelated files (e.g. corrupting `.sqlfluff` config). Per-file calls keep prompts small and safe.
-
-### Step 5 — Context Retrieval (`context_retrieval.py`)
+### Step 3 — Context Retrieval (`context_retrieval.py`)
 - Fetches additional context (file history, project structure) for the LLM agents
 - Prepares the shared state for parallel review
 
-### Step 6 — Parallel LLM Review (3 Agents)
+### Step 4 — Parallel LLM Review (3 Agents)
 All three agents run simultaneously via LangGraph's fan-out edges:
 
 | Agent | File | Focus |
@@ -163,12 +130,11 @@ All three agents run simultaneously via LangGraph's fan-out edges:
 
 Each agent sends the file contents to Amazon Nova Pro with a role-specific system prompt and returns structured findings with severity (`critical`, `major`, `minor`) and line-level suggestions.
 
-### Step 6.5 — PR-Agent Refinement (`fetch_pr_agent_suggestions.py`)
-- Findings from the three internal agents are sanitized (to remove confident logic that might be wrong).
-- Findings are sent to an external **PR-Agent API** for refinement.
-- The system waits (polls the local SQLite DB) until PR-Agent POSTs back the refined findings via webhook.
+### Step 4.5 — PR-Agent Refinement (`fetch_pr_agent_suggestions.py`)
+- Findings from the three internal agents are sanitized.
+- Findings are sent to the local **PR-Agent API** (running in the same pipeline/VM) for refinement via a synchronous HTTP call to localhost.
 
-### Step 7 — Aider LLM Fix (`aider_llm_fix.py`)
+### Step 5 — Aider LLM Fix (`aider_llm_fix.py`)
 *Applies fixes for all refined findings.*
 
 Uses **Layer 2 architecture** — processes one file at a time:
@@ -195,7 +161,7 @@ After all files processed:
 
 > ⚠️ **Validation gate improvement (June 23, 2026):** SQLFluff validation is now skipped for Python-only files. Previously, a broken `.sqlfluff` config (caused by an earlier Aider hallucination) was causing `sqlfluff_ok=False` for every Python file, causing all LLM fixes to be incorrectly discarded.
 
-### Step 8 — Publish Review (`publish_review.py`)
+### Step 6 — Publish Review (`publish_review.py`)
 - Aggregates all findings
 - Generates a highly concise, professional PR comment containing:
   - Tags the PR `@Author`
@@ -210,7 +176,8 @@ After all files processed:
 
 ```
 ai-review-agent/
-├── main.py                          # FastAPI entrypoint, lifespan, router
+├── cli.py                           # CLI entrypoint for Azure Pipelines
+├── ai-review.yml                    # Azure DevOps Pipeline Definition
 ├── .env                             # Local secrets — NOT committed (in .gitignore)
 ├── .env.example                     # Template — committed, safe to share
 ├── .gitignore                       # Ignores .env, .venv, *.db, chroma_db, etc.
@@ -222,12 +189,11 @@ ai-review-agent/
     │   ├── state.py                 # PRReviewState Pydantic model
     │   └── nodes/
     │       ├── ingestion.py         # PR file fetching from Azure DevOps
-    │       ├── ci_status.py         # Azure DevOps CI build polling
-    │       ├── aider_ci_fix.py      # CI lint auto-fix (per-file loop)
     │       ├── context_retrieval.py # ChromaDB RAG guideline retrieval
     │       ├── code_quality.py      # Code quality LLM agent
     │       ├── security_audit.py    # Security LLM agent
     │       ├── performance.py       # Performance LLM agent
+    │       ├── fetch_pr_agent_suggestions.py # Posts to local PR-Agent
     │       ├── aider_llm_fix.py     # Bug auto-fix (per-file + validation gate)
     │       └── publish_review.py    # PR comment publisher
     ├── azure_client/
@@ -236,17 +202,9 @@ ai-review-agent/
     │   └── ci_client.py             # Azure DevOps Build REST API calls
     ├── config/
     │   └── settings.py              # Pydantic settings (reads from .env)
-    ├── db/
-    │   ├── database.py              # SQLAlchemy engine + SessionLocal
-    │   └── models.py                # ReviewJob ORM model
-    ├── gateway/
-    │   ├── routes.py                # Webhook + health + job status endpoints
-    │   └── signature.py             # Webhook Basic auth validation
     ├── guidelines/
     │   ├── python_guidelines.md     # Python coding standards (indexed into ChromaDB)
     │   └── dbt_guidelines.md        # dbt/SQL coding standards (indexed into ChromaDB)
-    ├── queue/
-    │   └── worker.py                # Background thread polling SQLite job queue
     └── rag/
         ├── indexer.py               # ChromaDB collection setup + guideline seeding
         └── retriever.py             # ChromaDB query interface
@@ -267,62 +225,34 @@ demo-python-dbt-fixed/               # Demo repository (target of agent reviews)
 | `AZURE_DEVOPS_ORG` | Azure DevOps organisation name | — |
 | `AZURE_DEVOPS_PROJECT` | Azure DevOps project name | — |
 | `AZURE_DEVOPS_REPO` | Azure DevOps repository name | — |
-| `AZURE_TENANT_ID` | (Optional) Microsoft Entra ID Tenant ID | — |
-| `AZURE_CLIENT_ID` | (Optional) Service Principal Client ID for OAuth | — |
-| `AZURE_CLIENT_SECRET` | (Optional) Service Principal Secret Value | — |
-| `AZURE_DEVOPS_PAT` | (Legacy) Personal Access Token (fallback) | — |
-| `AZURE_DEVOPS_WEBHOOK_SECRET` | Shared secret for webhook validation | — |
+| `SYSTEM_ACCESSTOKEN` | ADO Pipeline Native Access Token (Replaces PATs) | — |
 | `AWS_ACCESS_KEY_ID` | AWS credentials for Bedrock | — |
 | `AWS_SECRET_ACCESS_KEY` | AWS credentials for Bedrock | — |
 | `AWS_REGION` | AWS region | `us-east-1` |
 | `BEDROCK_MODEL_ID` | Bedrock model ID | `amazon.nova-pro-v1:0` |
 | `DEMO_REPO_PATH` | Absolute path to the local demo repository | — |
 | `CHROMA_DB_PATH` | Path for ChromaDB vector store | `./chroma_db` |
-| `SQLITE_DB_PATH` | Path for SQLite job queue | `./review_agent.db` |
-| `AIDER_MAX_CI_RETRIES` | Max CI fix retry attempts | `2` |
 | `MIN_FIX_CONFIDENCE` | Minimum confidence (0.0–1.0) for a finding to trigger auto-fix | `0.7` |
 
 ---
 
 ## 6. Infrastructure Setup
 
-### Running the Agent
+The agent runs entirely as a native Azure DevOps Pipeline (`ai-review.yml`). There is no need for local servers, SQLite queues, or Ngrok tunnels.
 
-```bash
-cd ai-review-agent
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
-```
+### Azure DevOps Pipeline Configuration
 
-> ⚠️ Do NOT use `--reload`. It causes Aider subprocess crashes due to process file-watching conflicts.
+1. Ensure the `ai-review.yml` pipeline is added to Azure Pipelines.
+2. In Azure DevOps, create a Variable Group named `AI-Agent-Secrets`.
+3. Add secrets such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `OPENAI_API_KEY` to the Variable Group.
+4. Set up Branch Policies on your main branch to trigger this pipeline on Pull Requests (`Build Validation`).
 
-### Exposing to Azure DevOps (Development)
+### Granting Permission to Commit
 
-```bash
-ngrok http 8000
-# Copy the URL e.g. https://abc123.ngrok-free.app
-```
-
-### Azure DevOps Webhook Configuration
-
-```
-Project Settings → Service Hooks → Web Hooks → Create Subscription
-  Event:  Pull request created
-  URL:    https://<ngrok-url>/webhook/azure/pr
-```
-
-### Azure DevOps CI Pipeline Requirements
-
-Your CI pipeline must run these two checks on the PR branch:
-
-```yaml
-# ruff check (Python linting)
-- script: ruff check src/
-  displayName: 'Run Ruff on src/'
-
-# sqlfluff lint (SQL linting)
-- script: sqlfluff lint models/ --dialect ansi --format human
-  displayName: 'Run SQLFluff on models/'
-```
+The pipeline uses the native `$(System.AccessToken)` to push fixes and comment on PRs. Ensure the `[Project Name] Build Service ([Organization Name])` has these permissions under Repository Security:
+- **Contribute**
+- **Contribute to pull requests**
+- **Create branch**
 
 ---
 

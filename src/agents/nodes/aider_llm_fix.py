@@ -191,8 +191,7 @@ async def run(state: PRReviewState) -> dict:
     12. Never leak or reintroduce secrets.
     13. DO NOT delete any existing print statements, logging, or developer comments unless a finding explicitly tells you to.
     14. NEVER add fallback strings for environment variables (e.g., do not add 'or "default_key"'). If a secret is missing, handle it securely or raise an error.
-    15. NEVER guess or change array indices, dictionary keys, or math operations. If an IndexError is reported, add bounds checking, do NOT blindly change the index.
-    16. If an import is unused, DELETE IT. Do not add # noqa comments to suppress unused import warnings.
+    15. If an import is unused, DELETE IT. Do not add # noqa comments to suppress unused import warnings.
     """
 
             log.info("aider_llm_fix_file_start", file=file_path)

@@ -384,11 +384,12 @@ async def run(state: PRReviewState) -> dict:
                             f"EXACT LINT ERRORS:\n{ci_errors}\n\n"
                             f"You MUST fix these specific lint errors in the affected files immediately.\n"
                             f"Strict Rules:\n"
-                            f"- Fix ONLY the lint errors above. Do NOT touch, rename, or change any business logic.\n"
-                            f"- DO NOT change database table names, view names, schemas, or `ref()` / `source()` targets.\n"
-                            f"- DO NOT change SQL table aliases (e.g. leave `final as o` alone) unless the lint error explicitly demands it.\n"
-                            f"- Ensure the files are syntactically valid.\n"
-                            f"- If it is a SQL file, ensure exactly one clause per line for SELECT/FROM/WHERE, and preserve all column names."   
+                            "- Fix ONLY the lint errors above. Do NOT touch, rename, or change any business logic.\n"
+                            "- DO NOT delete code or remove entire blocks just to silence a linter. If you cannot fix the syntax without deleting the code, leave it alone.\n"
+                            "- DO NOT change database table names, view names, schemas, or `ref()` / `source()` targets.\n"
+                            "- DO NOT change SQL table aliases (e.g. leave `final as o` alone) unless the lint error explicitly demands it.\n"
+                            "- Ensure the files are syntactically valid.\n"
+                            "- If it is a SQL file, ensure exactly one clause per line for SELECT/FROM/WHERE, and preserve all column names.\n"   
                         )
                     aider_ci_cmd = [
                         "aider", "--yes", "--no-gui", "--no-show-release-notes",

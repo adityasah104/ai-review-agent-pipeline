@@ -1,43 +1,36 @@
 import structlog
+import os
 from src.agents.state import PRReviewState
-from src.rag.retriever import retrieve_guidelines
 
 log = structlog.get_logger()
 
 
 async def run(state: PRReviewState) -> dict:
     """
-    Queries ChromaDB to fetch relevant Python and dbt guidelines
+    Reads relevant Python and dbt guidelines directly from disk
     based on what file types changed in the PR.
     """
     log.info("context_retrieval_start")
 
     file_types = list(set(f["file_type"] for f in state.changed_files))
-    queries = []
+    context = []
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    guidelines_dir = os.path.join(base_dir, "guidelines")
 
     if "python" in file_types:
-        queries.append("Python code quality best practices PEP8 style guide")
-        queries.append("Python security vulnerabilities common mistakes")
+        try:
+            with open(os.path.join(guidelines_dir, "python_guidelines.md"), "r") as f:
+                context.append(f"### Python Guidelines ###\n{f.read()}")
+        except Exception as e:
+            log.warning("failed_to_read_python_guidelines", error=str(e))
 
     if "sql" in file_types:
-        queries.append("dbt SQL style guide best practices naming conventions")
-        queries.append("SQL performance optimization query structure")
+        try:
+            with open(os.path.join(guidelines_dir, "dbt_guidelines.md"), "r") as f:
+                context.append(f"### dbt/SQL Guidelines ###\n{f.read()}")
+        except Exception as e:
+            log.warning("failed_to_read_dbt_guidelines", error=str(e))
 
-    if not queries:
-        return {"rag_context": []}
-
-    all_context = []
-    for query in queries:
-        results = retrieve_guidelines(query, n_results=3)
-        all_context.extend(results)
-
-    # Deduplicate
-    seen = set()
-    unique_context = []
-    for item in all_context:
-        if item not in seen:
-            seen.add(item)
-            unique_context.append(item)
-
-    log.info("context_retrieval_done", chunks=len(unique_context))
-    return {"rag_context": unique_context[:8]}  # Cap at 8 chunks
+    log.info("context_retrieval_done", chunks=len(context))
+    return {"rag_context": context}

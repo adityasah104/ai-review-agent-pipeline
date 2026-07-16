@@ -161,76 +161,34 @@ async def run(state: PRReviewState) -> dict:
             base_file_prompt = f"""You are a precise, conservative code-fixing assistant working on exactly ONE file.                        
                                                                                                                                                  
     First, read the current content of `{file_path}` carefully before changing anything.                                                         
-    Do not rely on assumed line numbers below if the file content has shifted — locate                                                           
-    each issue by matching its description to the actual current code, not by line                                                               
-    number alone.                                                                                                                                
+    Do not rely on assumed line numbers below if the file content has shifted.                                                                   
                                                                                                                                                  
     Fix ONLY the following reviewer-identified issues in `{file_path}`:                                                                          
                                                                                                                                                  
     {chr(10).join(file_instructions)}                                                                                                            
                                                                                                                                                  
     Strict rules — follow all of them:                                                                                                           
-    1. Only edit `{file_path}`. Do NOT touch, create, or delete any other file.                                                                  
-    2. Make ONLY the minimal change needed to resolve each listed issue. Do not                                                                  
+    1. Make ONLY the minimal change needed to resolve each listed issue. Do not                                                                  
        refactor, rename, reformat, reorganize, or "clean up" any code that isn't                                                                 
        part of a listed issue.                                                                                                                   
+    2. DO NOT change business logic. This is critical.
+       - Do NOT change database table names, view names, or schemas.
+       - NEVER change the target of a dbt `{{{{ ref('...') }}}}` or `{{{{ source('...') }}}}`. If the code says `ref('orders')`, LEAVE IT AS `orders`.
+       - DO NOT change SQL table aliases (e.g. changing `final as o` to `final as f`). Leave aliases exactly as the developer wrote them.
     3. It is a completely acceptable outcome to make NO changes at all. If none                                                                  
-       of the listed issues clearly apply to the current code (already fixed,                                                                    
-       line shifted to something unrelated, description doesn't match reality,                                                                   
-       or you are not fully confident in the fix), leave the file untouched.                                                                     
-       Zero fixes is a valid and correct result — do NOT invent a change,                                                                        
-       rewrite something unrelated, or manufacture a "finding" just to produce                                                                   
-       a diff. A no-op is always better than a wrong or partial edit.                                                                            
+       of the listed issues clearly apply to the current code, leave the file untouched.                                                                     
     4. When replacing a hardcoded secret with an environment variable lookup,                                                                    
-       the replacement must be a single, complete, syntactically valid                                                                           
-       expression — never a partial edit that leaves both the old and new code                                                                   
-       mixed together.                                                                                                                           
-       - CORRECT:   API_KEY = os.getenv("API_KEY")                                                                                               
-       - CORRECT:   API_KEY = os.getenv("API_KEY", "fallback-if-truly-needed")                                                                   
-       - WRONG:     API_KEY = (os.getenv(), "sone@ed")                                                                                           
-       - WRONG:     API_KEY = os.getenv(), "sone@ed"                                                                                             
-       - WRONG: any tuple, concatenation, or leftover fragment that combines                                                                     
-         the call with the original literal value.                                                                                               
-       If you replace a value with os.getenv(...), the original literal must                                                                     
-       be fully removed from that line — not preserved alongside it in any form.                                                                 
+       the replacement must be a single, complete, syntactically valid expression.
     5. For SQL files: do NOT add, remove, reorder, rename, or alias the                                                                          
-       selected columns unless the listed issue explicitly requires a column                                                                     
-       change (e.g. "remove SELECT *" with a named replacement list already                                                                      
-       given). Formatting fixes (keyword case, indentation, whitespace) must                                                                     
-       preserve the exact same column list, in the exact same order, as                                                                          
-       currently selected. If a finding doesn't explicitly call for a column                                                                     
-       change, treat the column list as fixed and untouchable.                                                                                   
-    6. If a listed issue does not clearly match the current code (already                                                                        
-       fixed, line shifted to something unrelated, description doesn't apply),                                                                   
-       SKIP that specific issue. Do not guess a fix, do not invent a change to                                                                   
-       something else to compensate, and do not fabricate line numbers,                                                                          
-       variables, or file content that don't actually exist.
+       selected columns unless the listed issue explicitly requires it.                                                                                   
+    6. If a listed issue does not clearly match the current code, SKIP that specific issue.
     7. Security issues are the highest priority and must be fixed with a real,                                                                   
-       working remediation — never by deleting/commenting out/weakening the                                                                      
-       vulnerable logic, never by adding lint-suppression comments (e.g. # noqa,                                                                 
-       # nosec), and never with a bare except: pass. Do not remove or bypass                                                                     
-       authentication, authorization, input validation, sanitization, or encryption                                                              
-       logic. Do not introduce any new vulnerability while fixing this or any other                                                              
-       issue.                                                                                                                                    
-    8. NEVER add comments that simply restate or echo the finding's description 
-       or suggestion. If a finding is a generic instruction like "ensure the function 
-       is correctly defined and used" or "validate the input," do NOT paste that 
-       as a `# comment` into the code. If you cannot apply a real, functional 
-       code change to fix the issue, you must SKIP the issue and make NO changes.
-    9. Keep all existing business logic, function signatures, and behavior intact
-       except where a listed issue explicitly requires a change.                                                                                 
-    9. If you are not confident a fix is correct, leave that issue unresolved                                                                    
-       rather than applying a speculative or partial change.                                                                                     
-    10. Ensure the file remains syntactically valid after your changes (valid                                                                    
-        Python or valid SQL, as applicable). Before finishing, re-read the exact                                                                 
-        lines you changed and confirm each is a single complete, valid statement                                                                 
-        with no orphaned fragments of the old code left behind.                                                                                  
-    11. Do not add comments narrating what you changed unless a comment is                                                                       
-        required to explain a non-obvious security fix.                                                                                          
-    12. Write the fix in a style that passes lint on the first attempt:                                                                          
-        - Python: PEP 8, ruff-clean.
-        - SQL: sqlfluff ansi dialect, jinja templater.
-    13. Never leak or reintroduce secrets.
+       working remediation.                                                                                                    
+    8. NEVER add comments that simply restate or echo the finding's description.
+    9. Keep all existing business logic, function signatures, and behavior intact.                                                                               
+    10. Ensure the file remains syntactically valid after your changes.                                                                                 
+    11. Write the fix in a style that passes lint on the first attempt (PEP 8 / sqlfluff ansi).                                                                          
+    12. Never leak or reintroduce secrets.
     """
 
             log.info("aider_llm_fix_file_start", file=file_path)
@@ -416,6 +374,8 @@ async def run(state: PRReviewState) -> dict:
                             f"You MUST fix these specific lint errors in `{fp}` immediately.\n"
                             f"Strict Rules:\n"
                             f"- Fix ONLY the lint errors above. Do NOT touch, rename, or change any business logic.\n"
+                            f"- DO NOT change database table names, view names, schemas, or `ref()` / `source()` targets.\n"
+                            f"- DO NOT change SQL table aliases (e.g. leave `final as o` alone) unless the lint error explicitly demands it.\n"
                             f"- Ensure the file is syntactically valid.\n"
                             f"- If it is a SQL file, ensure exactly one clause per line for SELECT/FROM/WHERE, and preserve all column names."   
                         )

@@ -189,6 +189,7 @@ async def run(state: PRReviewState) -> dict:
     10. Ensure the file remains syntactically valid after your changes.                                                                                 
     11. Write the fix in a style that passes lint on the first attempt (PEP 8 / sqlfluff ansi).                                                                          
     12. Never leak or reintroduce secrets.
+    13. DO NOT delete any existing print statements, logging, or developer comments unless a finding explicitly tells you to.
     """
 
             log.info("aider_llm_fix_file_start", file=file_path)

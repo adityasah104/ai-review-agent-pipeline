@@ -1,6 +1,8 @@
 import json
-import httpx
 import structlog
+import asyncio
+import sys
+import os
 from src.agents.state import PRReviewState
 from src.config.settings import settings
 
@@ -14,18 +16,9 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
         return {"refined_findings": []}
 
     def sanitize_finding(f: dict) -> dict:
-        """
-        Cleans a finding before sending to PR-Agent.
-        - Ensures file_path is always present
-        - Fixes hallucinated 'file_number' -> 'line_number'
-        - Ensures line_number is always an integer
-        - Keeps only known fields PR-Agent's schema expects
-        """
-        # Fix hallucinated field name
         if "file_number" in f and "line_number" not in f:
             f["line_number"] = f.pop("file_number")
 
-        # Ensure line_number is an integer
         raw_line = f.get("line_number")
         if raw_line is not None:
             try:
@@ -43,23 +36,28 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
             "confidence":  float(f.get("confidence", 1.0)),
         }
 
-    # 1. Send data to PR-Agent (sanitized)
     sanitized = [sanitize_finding(f) for f in findings if f.get("file_path") or f.get("file_number")]
-    payload = {
-        "pr_id": pr_id,
-        "my_suggestions": sanitized
-    }
+    
+    # Try importing PR Agent directly to avoid HTTP IPC overhead
+    try:
+        from pr_agent.app18 import receive_findings, IncomingFindingsPayload, IncomingSuggestionItem
+    except ImportError:
+        log.warning("pr_agent_import_failed", msg="Could not import pr_agent. Falling back to original findings.")
+        return {"refined_findings": findings}
 
-    print("\n--- FINDINGS BEING SENT TO PR_AGENT ---")
-    print(json.dumps(payload, indent=2))
+    # Construct the payload models natively
+    suggestion_items = [IncomingSuggestionItem(**item) for item in sanitized]
+    payload = IncomingFindingsPayload(pr_id=pr_id, my_suggestions=suggestion_items)
+
+    print("\n--- FINDINGS BEING SENT TO PR_AGENT (DIRECT IMPORT) ---")
+    print(json.dumps([s.dict() for s in suggestion_items], indent=2))
     print("--------------------------------------\n")
 
     try:
-        # Synchronous request with long timeout since PR-Agent runs on localhost
-        response = httpx.post(settings.PR_AGENT_REFINE_URL, json=payload, timeout=300.0)
-        response.raise_for_status()
+        # Call the asynchronous FastAPI route function directly
+        result_dict = asyncio.run(receive_findings(payload))
         
-        refined_findings = response.json().get("refined_findings", [])
+        refined_findings = result_dict.get("refined_findings", [])
         log.info("received_refined_findings_from_pr_agent", pr_id=pr_id)
         
         print("\n=== REFINED FINDINGS RECEIVED FROM PR_AGENT ===")

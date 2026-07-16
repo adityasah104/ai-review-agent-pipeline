@@ -383,11 +383,18 @@ async def run(state: PRReviewState) -> dict:
                 ["sqlfluff", "lint", "models/", "--dialect", "ansi", "--format", "human"],
                 cwd=repo_path, capture_output=True, text=True,
             )
+            pytest_result = subprocess.run(
+                ["pytest"], cwd=repo_path, capture_output=True, text=True
+            )
+            
             ruff_ok = ruff_result.returncode == 0
             sqlfluff_ok = sqlfluff_result.returncode == 0
-            log.info("local_ci_result", attempt=ci_attempt, ruff_ok=ruff_ok, sqlfluff_ok=sqlfluff_ok)
+            # pytest returns 5 if no tests are collected, which we consider a pass
+            pytest_ok = pytest_result.returncode in (0, 5)
+            
+            log.info("local_ci_result", attempt=ci_attempt, ruff_ok=ruff_ok, sqlfluff_ok=sqlfluff_ok, pytest_ok=pytest_ok)
 
-            if ruff_ok and sqlfluff_ok:
+            if ruff_ok and sqlfluff_ok and pytest_ok:
                 ci_passed = True
                 log.info("local_ci_passed", attempt=ci_attempt)
                 break
@@ -398,6 +405,8 @@ async def run(state: PRReviewState) -> dict:
                     ci_errors += f"=== Ruff errors ===\n{ruff_result.stdout}\n"
                 if not sqlfluff_ok:
                     ci_errors += f"=== SQLFluff errors ===\n{sqlfluff_result.stdout}\n"
+                if not pytest_ok:
+                    ci_errors += f"=== Pytest errors ===\n{pytest_result.stdout}\n{pytest_result.stderr}\n"
                 log.warning("local_ci_failed_retrying", attempt=ci_attempt)
 
                 for fp in files_fixed:

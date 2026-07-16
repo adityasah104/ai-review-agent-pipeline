@@ -370,33 +370,46 @@ async def run(state: PRReviewState) -> dict:
                     ci_errors += f"=== Pytest errors ===\n{pytest_result.stdout}\n{pytest_result.stderr}\n"
                 log.warning("local_ci_failed_retrying", attempt=ci_attempt)
 
-                for fp in files_fixed:
+                import re
+                import os
+                # Find all .py and .sql files mentioned in the CI errors
+                failed_files = set(re.findall(r"([a-zA-Z0-9_/\-]+\.(?:py|sql))", ci_errors))
+                failed_files = [f for f in failed_files if os.path.exists(os.path.join(repo_path, f))]
+                if not failed_files:
+                    failed_files = files_fixed
+
+                if failed_files:
                     ci_prompt = (
-                            f"STOP. Your previous fix broke the build. The local lint CI failed on branch '{agent_branch}'.\n\n"
+                            f"STOP. The local lint CI failed on branch '{agent_branch}'.\n\n"
                             f"EXACT LINT ERRORS:\n{ci_errors}\n\n"
-                            f"You MUST fix these specific lint errors in `{fp}` immediately.\n"
+                            f"You MUST fix these specific lint errors in the affected files immediately.\n"
                             f"Strict Rules:\n"
                             f"- Fix ONLY the lint errors above. Do NOT touch, rename, or change any business logic.\n"
                             f"- DO NOT change database table names, view names, schemas, or `ref()` / `source()` targets.\n"
                             f"- DO NOT change SQL table aliases (e.g. leave `final as o` alone) unless the lint error explicitly demands it.\n"
-                            f"- Ensure the file is syntactically valid.\n"
+                            f"- Ensure the files are syntactically valid.\n"
                             f"- If it is a SQL file, ensure exactly one clause per line for SELECT/FROM/WHERE, and preserve all column names."   
                         )
                     aider_ci_cmd = [
                         "aider", "--yes", "--no-gui", "--no-show-release-notes",
                         "--no-show-model-warnings", "--no-check-update",
                         "--no-auto-commits", "--no-stream", "--no-git",
-                        "--map-tokens", "0", "--edit-format", "diff",
+                        "--map-tokens", "1024", "--edit-format", "diff",
                         "--lint-cmd", "python: ruff check", "--auto-lint",
                         "--model", "bedrock/amazon.nova-pro-v1:0",
-                        "--message", ci_prompt, fp,
-                    ]
+                        "--message", ci_prompt,
+                    ] + failed_files
+                    
                     subprocess.run(
                         aider_ci_cmd, cwd=repo_path, capture_output=True,
-                        text=True, timeout=150, stdin=subprocess.DEVNULL,
+                        text=True, timeout=300, stdin=subprocess.DEVNULL,
                     )
-                    subprocess.run(["ruff", "format", fp], cwd=repo_path, capture_output=True)
-                    subprocess.run(["ruff", "check", "--fix", "--unsafe-fixes", fp], cwd=repo_path, capture_output=True)
+                    for fp in failed_files:
+                        if fp.endswith(".py"):
+                            subprocess.run(["ruff", "format", fp], cwd=repo_path, capture_output=True)
+                            subprocess.run(["ruff", "check", "--fix", "--unsafe-fixes", fp], cwd=repo_path, capture_output=True)
+                        elif fp.endswith(".sql"):
+                            subprocess.run(["sqlfluff", "fix", fp, "--dialect", "ansi", "--templater", "jinja", "--force"], cwd=repo_path, capture_output=True)
 
                 subprocess.run(["git", "add", "-A"], cwd=repo_path, capture_output=True)
                 diff_after = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=repo_path, capture_output=True)

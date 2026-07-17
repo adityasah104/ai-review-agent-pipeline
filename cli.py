@@ -25,7 +25,7 @@ async def main():
     source_commit = os.environ.get("SYSTEM_PULLREQUEST_SOURCECOMMITID")
     if source_commit:
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%an", source_commit],
+            ["git", "log", "-1", "--format=%an|||%B", source_commit],
             capture_output=True, text=True
         )
 
@@ -35,12 +35,19 @@ async def main():
                 f"Git error: {result.stderr.strip()}. "
                 "Refusing to proceed rather than risk re-running on our own commit."
             )
+            
+        stdout_parts = result.stdout.strip().split("|||", 1)
+        author = stdout_parts[0]
+        msg = stdout_parts[1] if len(stdout_parts) > 1 else ""
+        
+        print(f"DEBUG - source_commit: {source_commit}")
+        print(f"DEBUG - author resolved: '{author}'")
+        print(f"DEBUG - commit msg: {msg[:100]}")
 
-        author = result.stdout.strip()
         if author == AI_AGENT_AUTHOR_NAME:
             print("\n" + "="*60)
             print("SAFEGUARD TRIGGERED: Infinite Loop Prevented")
-            print("The latest commit on this PR was authored by the AI Review Agent.")
+            print(f"The latest commit on this PR ({source_commit}) was authored by '{author}'.")
             print("Gracefully exiting so we don't infinitely review our own fixes!")
             print("="*60 + "\n")
             return

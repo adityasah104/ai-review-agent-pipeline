@@ -21,7 +21,7 @@ import aiohttp
 log = structlog.get_logger()
 
 CI_POLL_INTERVAL_SECONDS = 5
-CI_MAX_WAIT_SECONDS = 60  # Give ADO up to 60s to report a build result
+CI_MAX_WAIT_SECONDS = 5  # Reduced from 60s to 5s because no other CI pipeline exists
 
 
 async def run(state: PRReviewState) -> dict:

@@ -83,7 +83,7 @@ async def run(state: PRReviewState) -> dict:
 
     if not fixable_findings:
         log.info("aider_llm_fix_nothing_to_fix")
-        return {"aider_fix_applied": False, "aider_fix_summary": "No auto-fixable issues found.", "agent_branch": ""}
+        # Proceed to local CI loop even if no LLM fixes
 
     repo_path = settings.DEMO_REPO_PATH
     developer_branch = state.source_branch.replace("refs/heads/", "")
@@ -99,8 +99,7 @@ async def run(state: PRReviewState) -> dict:
         if f.get("file_path")
     ))
 
-    if not files_to_fix:
-        return {"aider_fix_applied": False, "aider_fix_summary": "No files to fix.", "agent_branch": ""}
+    # Proceed even if no files_to_fix, so we can run CI
 
     try:
         token = await get_azure_devops_token()
@@ -310,26 +309,24 @@ async def run(state: PRReviewState) -> dict:
             cwd=repo_path, capture_output=True,
         )
 
-        if diff_result.returncode == 0:
-            summary = "Aider ran but found no changes to apply."
+        if diff_result.returncode != 0:
+            skipped_note = f"\nDiscarded (unparseable after retries): {files_skipped}" if files_skipped else ""
+            warning_note = (
+                f"\nCommitted with unresolved lint warnings: {files_kept_with_warnings}"
+                if files_kept_with_warnings else ""
+            )
+            commit_msg = (
+                f"fix(ai-review): apply {len(fixable_findings)} auto-fix suggestion(s)\n\n"
+                f"Applied by AI Review Agent using Aider + Amazon Bedrock Nova Pro.\n"
+                f"Files fixed: {files_fixed}{skipped_note}{warning_note}\n"
+                f"Original PR: {state.pr_url}"
+            )
+            subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=repo_path, check=True, capture_output=True,
+            )
+        else:
             log.info("aider_llm_fix_no_changes")
-            return {"aider_fix_applied": False, "aider_fix_summary": summary, "agent_branch": agent_branch}
-
-        skipped_note = f"\nDiscarded (unparseable after retries): {files_skipped}" if files_skipped else ""
-        warning_note = (
-            f"\nCommitted with unresolved lint warnings: {files_kept_with_warnings}"
-            if files_kept_with_warnings else ""
-        )
-        commit_msg = (
-            f"fix(ai-review): apply {len(fixable_findings)} auto-fix suggestion(s)\n\n"
-            f"Applied by AI Review Agent using Aider + Amazon Bedrock Nova Pro.\n"
-            f"Files fixed: {files_fixed}{skipped_note}{warning_note}\n"
-            f"Original PR: {state.pr_url}"
-        )
-        subprocess.run(
-            ["git", "commit", "-m", commit_msg],
-            cwd=repo_path, check=True, capture_output=True,
-        )
 
         # ------------------------------------------------------------------
         # STEP F: Local CI Loop — ruff + sqlfluff on whole repo, up to 3x
@@ -376,7 +373,7 @@ async def run(state: PRReviewState) -> dict:
                 failed_files = set(re.findall(r"([a-zA-Z0-9_/\-]+\.(?:py|sql))", ci_errors))
                 failed_files = [f for f in failed_files if os.path.exists(os.path.join(repo_path, f))]
                 if not failed_files:
-                    failed_files = files_fixed
+                    failed_files = ["src/", "models/"]
 
                 if failed_files:
                     ci_prompt = (
@@ -423,8 +420,16 @@ async def run(state: PRReviewState) -> dict:
                 log.warning("local_ci_max_attempts_reached", final_attempt=ci_attempt)
 
         # ------------------------------------------------------------------
-        # STEP G: Push ONLY the agent branch to origin
+        # STEP G: Push ONLY the agent branch to origin (if changed)
         # ------------------------------------------------------------------
+        local_hash = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, capture_output=True, text=True).stdout.strip()
+        remote_hash = subprocess.run(["git", "rev-parse", f"origin/{developer_branch}"], cwd=repo_path, capture_output=True, text=True).stdout.strip()
+        
+        if local_hash == remote_hash:
+            summary = "Aider ran but found no changes to apply (and local CI passed or wasn't fixed)."
+            log.info("aider_llm_fix_no_final_changes")
+            return {"aider_fix_applied": False, "aider_fix_summary": summary, "agent_branch": ""}
+
         subprocess.run(
             ["git", "-c", f"http.extraheader=AUTHORIZATION: bearer {token}",
              "push", "origin", agent_branch],
@@ -433,7 +438,7 @@ async def run(state: PRReviewState) -> dict:
         log.info("agent_branch_pushed", branch=agent_branch, ci_passed=ci_passed)
 
         summary = (
-            f"Fixed {len(files_fixed)} file(s) on branch `{agent_branch}`."
+            f"Fixed {len(files_fixed)} file(s) from LLM review on branch `{agent_branch}`."
             + (f" {len(files_kept_with_warnings)} file(s) kept with lint warnings." if files_kept_with_warnings else "")
             + (f" Discarded {len(files_skipped)} file(s) as unparseable." if files_skipped else "")
             + (" Local CI passed." if ci_passed else f" Local CI still failing after {MAX_CI_LINT_ATTEMPTS} attempts — PR raised anyway.")

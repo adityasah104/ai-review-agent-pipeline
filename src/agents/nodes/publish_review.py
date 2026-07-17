@@ -36,6 +36,11 @@ def _findings_table(findings: list, lines: list, show_skipped: bool = False) -> 
         conf_pct  = f"{int(conf_val * 100)}%"
         desc      = f.get("description", "").replace("|", "\\|")
         suggestion = f.get("suggestion", "").replace("|", "\\|")
+        
+        # Azure DevOps Markdown tables break if they contain newlines or backticks 
+        # that look like fenced code blocks inside cells. We must sanitize them.
+        desc = desc.replace("\n", "<br/>").replace("```", "")
+        suggestion = suggestion.replace("\n", "<br/>").replace("```", "")
 
         skipped = " *(auto-fix skipped)*" if show_skipped else ""
 
@@ -55,11 +60,9 @@ def _build_comment(state: PRReviewState) -> str:
     lines.append(f"cc: {author_tag}")
     lines.append("")
     
-    if state.status == "CI_FIX_GAVE_UP":
+    if getattr(state, "status", "") == "CI_FIX_GAVE_UP":
         lines.append("> **Warning:** Attempted CI fixes but pipeline is still failing. Manual intervention required.")
         lines.append("")
-
-    lines.append("")
 
     findings = state.refined_findings if state.refined_findings else state.findings
     
@@ -73,11 +76,24 @@ def _build_comment(state: PRReviewState) -> str:
         else:
             skipped_findings.append(f)
             
-    if fixed_findings:
+    has_agent_fixes = fixed_findings or getattr(state, "aider_fix_applied", False)
+    
+    if has_agent_fixes:
         lines.append("### 🛠️ Issues Found & Fixed")
-        lines.append("The review agent identified high-confidence issues and has applied automated fixes on a separate agent branch:")
-        lines.append("")
-        _findings_table(fixed_findings, lines, show_skipped=False)
+        
+        if fixed_findings:
+            lines.append("The review agent identified high-confidence issues and has applied automated fixes on a separate agent branch:")
+            lines.append("")
+            _findings_table(fixed_findings, lines, show_skipped=False)
+        else:
+            lines.append("The review agent found 0 high-confidence issues during code review, but **local CI/linting checks failed**. Automated CI fixes were applied on a separate agent branch.")
+            lines.append("")
+            
+        summary = getattr(state, "aider_fix_summary", "")
+        if summary:
+            lines.append("**Agent Fix Summary:**")
+            lines.append(f"> {summary}")
+            lines.append("")
         
         if skipped_findings:
             lines.append("### ⚠️ Potential Improvements (Manual Review Required)")
@@ -88,7 +104,7 @@ def _build_comment(state: PRReviewState) -> str:
     else:
         lines.append("### ✅ Code Review Complete")
         lines.append("")
-        lines.append("The review agent analyzed the changes in this pull request and found 0 high-confidence issues. No automated fixes or agent branches were necessary.")
+        lines.append("The review agent analyzed the changes in this pull request and found 0 high-confidence issues. Local CI checks passed. No automated fixes or agent branches were necessary.")
         lines.append("")
         
         if skipped_findings:

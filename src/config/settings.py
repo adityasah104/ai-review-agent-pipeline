@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     MIN_FIX_CONFIDENCE: float = 0.85
 
     # New Hybrid Integration
-    PR_AGENT_REFINE_URL: str = ""
+    PR_AGENT_REFINE_URL: str = "http://localhost:8000/api/pr-agent/submit"
     INTERNAL_API_SECRET: str = "my-super-secret-token"
     EXTERNAL_FINDINGS_TIMEOUT_SECONDS: int = 3600
 

@@ -466,13 +466,27 @@ def run(state: PRReviewState) -> dict:
         )
         remote_hash = remote_hash_result.stdout.strip() if remote_hash_result.returncode == 0 else ""
 
+        dev_hash_result = subprocess.run(
+            ["git", "rev-parse", f"origin/{developer_branch}"],
+            cwd=repo_path, capture_output=True, text=True
+        )
+        dev_hash = dev_hash_result.stdout.strip() if dev_hash_result.returncode == 0 else ""
+
         if local_hash == remote_hash:
-            log.info("aider_llm_fix_no_net_changes", reason="local HEAD matches remote, nothing to push")
-            return {
-                "aider_fix_applied": False,
-                "aider_fix_summary": "CI passed with no changes needed. Branch is already clean.",
-                "agent_branch": agent_branch,
-            }
+            if local_hash != dev_hash and dev_hash != "":
+                log.info("aider_llm_fix_already_pushed", reason="fixes already exist on remote agent branch")
+                return {
+                    "aider_fix_applied": True,
+                    "aider_fix_summary": "Agent fixes from a previous run are already up-to-date on the remote branch.",
+                    "agent_branch": agent_branch,
+                }
+            else:
+                log.info("aider_llm_fix_no_net_changes", reason="local HEAD matches remote, nothing to push")
+                return {
+                    "aider_fix_applied": False,
+                    "aider_fix_summary": "CI passed with no changes needed. Branch is already clean.",
+                    "agent_branch": agent_branch,
+                }
 
         subprocess.run(
             ["git", "-c", f"http.extraheader=AUTHORIZATION: bearer {token}",

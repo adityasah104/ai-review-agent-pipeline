@@ -1,7 +1,7 @@
 import structlog
 from src.agents.state import PRReviewState
-from src.azure_client.pr_client import create_pull_request, post_pr_comment
 from src.config.settings import settings
+from src.azure_client.pr_client import create_pull_request, post_pr_comment, get_existing_pull_request
 
 log = structlog.get_logger()
 
@@ -59,7 +59,17 @@ async def run(state: PRReviewState) -> dict:
         reviewer_ids = [state.pr_author_id] if state.pr_author_id else []
 
         try:
-            agent_pr = await create_pull_request(
+            # First, check if the PR is already open (e.g. from a previous pipeline run on the same branch)
+            agent_pr = await get_existing_pull_request(
+                repository_id=state.repository_id,
+                source_branch=state.agent_branch,
+                target_branch=developer_branch,
+            )
+            
+            if agent_pr:
+                log.info("create_agent_pr_already_exists", pr_id=agent_pr.get("pullRequestId"))
+            else:
+                agent_pr = await create_pull_request(
                 repository_id=state.repository_id,
                 source_branch=state.agent_branch,
                 target_branch=developer_branch,
@@ -86,7 +96,7 @@ async def run(state: PRReviewState) -> dict:
         agent_pr_url = f"https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{agent_pr_id}"
         log.info("create_agent_pr_created", pr_id=agent_pr_id, url=agent_pr_url)
 
-        author_mention = f"@<{state.pr_author_id}>" if state.pr_author_id else "Developer"
+        author_mention = f"@<{state.pr_author_id}>" if state.pr_author_id else "@Developer"
         link_comment = (
             f"## AI Review Agent — Fix Branch Ready\n\n"
             f"{author_mention} — The AI Review Agent has analysed this PR and applied fixes "

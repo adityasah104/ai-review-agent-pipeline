@@ -52,8 +52,8 @@ def _build_comment(state: PRReviewState) -> str:
 
     lines.append("## AI Code Review")
     lines.append("")
-    # Tag the actual PR author by their ADO unique name
-    author_tag = f"@{state.pr_author_id}" if state.pr_author_id else "@Author"
+    # Tag the actual PR author by their ADO unique name using < > so it becomes clickable
+    author_tag = f"@<{state.pr_author_id}>" if state.pr_author_id else "@Author"
     lines.append(f"cc: {author_tag}")
     lines.append("")
     

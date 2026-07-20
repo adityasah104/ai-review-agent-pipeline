@@ -171,3 +171,22 @@ async def create_pull_request(
         )
         resp.raise_for_status()
         return resp.json()
+async def get_existing_pull_request(repository_id: str, source_branch: str, target_branch: str) -> Optional[Dict]:
+    """Finds an existing active PR between source_branch and target_branch."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        headers = await get_auth_headers()
+        resp = await client.get(
+            f"{_base_url()}/git/repositories/{repository_id}/pullRequests",
+            headers=headers,
+            params={
+                "searchCriteria.sourceRefName": f"refs/heads/{source_branch}",
+                "searchCriteria.targetRefName": f"refs/heads/{target_branch}",
+                "searchCriteria.status": "active",
+                "api-version": "7.1",
+            },
+        )
+        if resp.status_code == 200:
+            prs = resp.json().get("value", [])
+            if prs:
+                return prs[0]
+        return None

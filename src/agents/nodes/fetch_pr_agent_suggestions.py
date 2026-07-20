@@ -1,17 +1,21 @@
-import json
+import time
 import httpx
 import structlog
 from src.agents.state import PRReviewState
 from src.config.settings import settings
+from src.db.database import SessionLocal
+from src.db.models import ReviewJob
 
 log = structlog.get_logger()
 
-async def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
+def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
     pr_id = state.pr_id
     findings = state.findings
 
     if not findings:
         return {"refined_findings": []}
+
+    import json
 
     def sanitize_finding(f: dict) -> dict:
         """
@@ -54,28 +58,53 @@ async def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
     print(json.dumps(payload, indent=2))
     print("--------------------------------------\n")
 
-    url = settings.PR_AGENT_REFINE_URL
-    if not url:
-        log.warning("pr_agent_refine_skipped", reason="PR_AGENT_REFINE_URL is empty")
-        return {"refined_findings": findings}
-        
-    if not url.startswith(("http://", "https://")):
-        url = "http://" + url
-
+    # 2. RUN PR AGENT NATIVELY (NO NETWORK CALL)
     try:
-        # Async request with long timeout since PR-Agent runs on localhost
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(url, json=payload)
-        response.raise_for_status()
+        import sys
+        import os
+        import asyncio
         
-        refined_findings = response.json().get("refined_findings", [])
-        log.info("received_refined_findings_from_pr_agent", pr_id=pr_id)
+        # Dynamically add pr-agent to sys.path so we can import it
+        pr_agent_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../pr-agent-latest-"))
+        if pr_agent_path not in sys.path:
+            sys.path.insert(0, pr_agent_path)
+            
+        from pr_agent.app18 import receive_findings, IncomingFindingsPayload
         
-        print("\n=== REFINED FINDINGS RECEIVED FROM PR_AGENT ===")
-        print(json.dumps(refined_findings, indent=2))
-        print("==============================================\n")
+        payload_model = IncomingFindingsPayload(pr_id=pr_id, my_suggestions=sanitized)
+        log.info("running_pr_agent_natively", pr_id=pr_id)
         
+        # Safely get or create an event loop to run the async PR-Agent function
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        if loop.is_running():
+            # If we're already inside an async context (e.g. LangGraph ainvoke), we must await it directly
+            # Wait, this node is defined as `def`, not `async def`. But just in case:
+            import nest_asyncio
+            nest_asyncio.apply()
+            
+        result = loop.run_until_complete(receive_findings(payload_model))
+        
+        refined_findings = result.get("refined_findings", [])
+        log.info("received_refined_findings_from_pr_agent_natively", pr_id=pr_id, count=len(refined_findings))
+        
+        # Update the database to mark it received
+        db = SessionLocal()
+        try:
+            job = db.query(ReviewJob).filter(ReviewJob.id == state.job_id).first()
+            if job:
+                job.refined_findings = refined_findings
+                job.refined_findings_received = True
+                db.commit()
+        finally:
+            db.close()
+            
         return {"refined_findings": refined_findings}
+        
     except Exception as e:
-        log.error("failed_to_get_suggestions_from_pr_agent", error=str(e))
+        log.error("failed_to_run_pr_agent_natively", error=str(e))
         return {"refined_findings": findings} # Fallback

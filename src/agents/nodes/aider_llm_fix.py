@@ -294,10 +294,17 @@ def run(state: PRReviewState) -> dict:
                         timeout=300,
                         stdin=subprocess.DEVNULL,
                     )
-                    log.info(
-                        "aider_llm_fix_file_output",
-                        file=file_path, attempt=attempt, returncode=result.returncode,
-                    )
+                    if result.returncode != 0:
+                        log.error(
+                            "aider_llm_fix_file_failed",
+                            file=file_path, attempt=attempt, returncode=result.returncode,
+                            stderr=result.stderr.strip(), stdout=result.stdout.strip()
+                        )
+                    else:
+                        log.info(
+                            "aider_llm_fix_file_output",
+                            file=file_path, attempt=attempt, returncode=result.returncode,
+                        )
 
                     subprocess.run(["ruff", "format", file_path], cwd=repo_path, capture_output=True)
                     subprocess.run(
@@ -494,33 +501,6 @@ def run(state: PRReviewState) -> dict:
             cwd=repo_path, check=True, capture_output=True,
         )
         log.info("agent_branch_pushed", branch=agent_branch, ci_passed=ci_passed)
-
-        # ------------------------------------------------------------------
-        # STEP H: Create Pull Request from agent branch to developer branch
-        # ------------------------------------------------------------------
-        from src.azure_client.pr_client import get_pr_details, create_pull_request, post_pr_comment
-        try:
-            pr_details = asyncio.run(get_pr_details(state.repository_id, state.pr_id))
-            dev_email = pr_details.get("createdBy", {}).get("uniqueName", "Developer")
-            
-            pr_title = f"AI Auto-Fixes for PR #{state.pr_id}"
-            pr_desc = f"Hey @<{dev_email}>, the AI Review Agent has automatically applied auto-fixes for your PR. Please review and merge these changes into your branch."
-            
-            new_pr = asyncio.run(create_pull_request(
-                state.repository_id,
-                source_branch=agent_branch,
-                target_branch=developer_branch,
-                title=pr_title,
-                description=pr_desc
-            ))
-            
-            new_pr_url = f"https://dev.azure.com/{settings.AZURE_DEVOPS_ORG}/{settings.AZURE_DEVOPS_PROJECT}/_git/{settings.AZURE_DEVOPS_REPO}/pullrequest/{new_pr.get('pullRequestId', '')}"
-            link_comment = f"Hey @<{dev_email}>, I've created a PR with auto-fixes for your branch here: {new_pr_url}"
-            asyncio.run(post_pr_comment(state.repository_id, state.pr_id, link_comment))
-            
-            log.info("aider_llm_fix_pr_created", pr_url=new_pr_url)
-        except Exception as pr_err:
-            log.error("aider_llm_fix_pr_creation_failed", error=str(pr_err))
 
         had_llm_fixes = bool(files_fixed)
         if had_llm_fixes:

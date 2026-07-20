@@ -54,10 +54,18 @@ async def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
     print(json.dumps(payload, indent=2))
     print("--------------------------------------\n")
 
+    url = settings.PR_AGENT_REFINE_URL
+    if not url:
+        log.warning("pr_agent_refine_skipped", reason="PR_AGENT_REFINE_URL is empty")
+        return {"refined_findings": findings}
+        
+    if not url.startswith(("http://", "https://")):
+        url = "http://" + url
+
     try:
         # Async request with long timeout since PR-Agent runs on localhost
         async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(settings.PR_AGENT_REFINE_URL, json=payload)
+            response = await client.post(url, json=payload)
         response.raise_for_status()
         
         refined_findings = response.json().get("refined_findings", [])

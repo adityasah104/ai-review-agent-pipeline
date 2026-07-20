@@ -147,15 +147,13 @@ async def create_pull_request(
 ) -> Dict:
     """
     Creates a Pull Request in ADO from source_branch to target_branch.
-    reviewer_ids is a list of ADO uniqueNames (emails).
-    ADO resolves uniqueName to user automatically and sends them an email.
+    reviewer_ids is a list of ADO UUIDs.
     Returns the full PR response JSON (contains pullRequestId, etc.)
     """
     async with httpx.AsyncClient(timeout=30) as client:
         headers = await get_auth_headers()
-        # ADO resolves reviewers by uniqueName (email) — NOT by id field when passing an email.
-        # Using uniqueName ensures ADO sends the notification email to the developer.
-        reviewers = [{"uniqueName": rid} for rid in (reviewer_ids or []) if rid]
+        # ADO resolves reviewers by UUID using the 'id' field
+        reviewers = [{"id": rid} for rid in (reviewer_ids or []) if rid]
         body = {
             "title": title,
             "description": description,

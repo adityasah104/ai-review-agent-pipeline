@@ -25,7 +25,7 @@ async def run(state: PRReviewState) -> dict:
         pr_author_id = ""
         try:
             pr_meta = await get_pr_metadata(state.repository_id, state.pr_id)
-            pr_author_id = pr_meta.get("createdBy", {}).get("uniqueName", "")
+            pr_author_id = pr_meta.get("createdBy", {}).get("id", "")
             log.info("ingestion_pr_author", author=pr_author_id)
         except Exception as e:
             log.warning("ingestion_pr_author_failed", error=str(e))

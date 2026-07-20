@@ -286,6 +286,20 @@ def run(state: PRReviewState) -> dict:
                         file_path,
                     ]
 
+                    import boto3
+                    import os
+                    try:
+                        client = boto3.client('bedrock-runtime', region_name=os.getenv('AWS_REGION', 'us-east-1'), aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'), aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'))
+                        client.invoke_model(modelId=\"amazon.nova-pro-v1:0\", body=b'{\"messages\":[{\"role\":\"user\",\"content\":[{\"text\":\"test\"}]}]}', contentType=\"application/json\", accept=\"application/json\")
+                        log.info(\"DEBUG BOTO3 TEST: SUCCESS! Keys and permissions are 100% valid.\")
+                    except Exception as e:
+                        log.info(f\"DEBUG BOTO3 TEST FAILED EXACT ERROR: {str(e)}\")
+                    
+                    # Print masked key
+                    aws_key = os.environ.get('AWS_ACCESS_KEY_ID', '')
+                    masked_key = aws_key[:4] + '...' + aws_key[-4:] if len(aws_key) > 8 else aws_key
+                    log.info(f\"DEBUG ADO AWS KEY INJECTED: '{masked_key}' (Length: {len(aws_key)})\")
+
                     result = subprocess.run(
                         aider_cmd,
                         cwd=repo_path,

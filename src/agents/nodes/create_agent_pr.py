@@ -86,7 +86,7 @@ async def run(state: PRReviewState) -> dict:
         agent_pr_url = f"https://dev.azure.com/{org}/{project}/_git/{repo}/pullrequest/{agent_pr_id}"
         log.info("create_agent_pr_created", pr_id=agent_pr_id, url=agent_pr_url)
 
-        author_mention = f"@{state.pr_author_id}" if state.pr_author_id else "Developer"
+        author_mention = f"@<{state.pr_author_id}>" if state.pr_author_id else "Developer"
         link_comment = (
             f"## AI Review Agent — Fix Branch Ready\n\n"
             f"{author_mention} — The AI Review Agent has analysed this PR and applied fixes "

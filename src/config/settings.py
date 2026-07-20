@@ -20,8 +20,6 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: str | None = None
     AWS_SECRET_ACCESS_KEY: str | None = None
 
-    # Groq (used by Aider for auto-fix)
-    GROQ_API_KEY: str = ""
 
     # App
     APP_HOST: str = "0.0.0.0"
@@ -29,8 +27,6 @@ class Settings(BaseSettings):
 
     # Paths
     DEMO_REPO_PATH: str
-    CHROMA_DB_PATH: str = "./chroma_db"
-    SQLITE_DB_PATH: str = "./review_agent.db"
 
     # Aider
     AIDER_MAX_CI_RETRIES: int = 2
@@ -43,7 +39,7 @@ class Settings(BaseSettings):
 
 
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()

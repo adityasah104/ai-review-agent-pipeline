@@ -1,4 +1,5 @@
 import re
+import asyncio
 import subprocess
 import structlog
 from src.agents.state import PRReviewState
@@ -63,7 +64,7 @@ def _is_syntactically_valid(repo_path: str, file_path: str) -> bool:
     return True
 
 
-async def run(state: PRReviewState) -> dict:
+def run(state: PRReviewState) -> dict:
     """
     Phase 2: Creates agent/<developer-branch> in ADO, checks it out locally,
     applies Aider fixes there, runs local ruff+sqlfluff CI up to 3 times,
@@ -82,8 +83,8 @@ async def run(state: PRReviewState) -> dict:
     ]
 
     if not fixable_findings:
-        log.info("aider_llm_fix_nothing_to_fix")
-        return {"aider_fix_applied": False, "aider_fix_summary": "No auto-fixable issues found.", "agent_branch": ""}
+        log.info("aider_llm_fix_no_high_confidence_findings")
+        # Don't return early — still check out branch and run CI linting below
 
     repo_path = settings.DEMO_REPO_PATH
     developer_branch = state.source_branch.replace("refs/heads/", "")
@@ -93,24 +94,21 @@ async def run(state: PRReviewState) -> dict:
     # ------------------------------------------------------------------
     agent_branch = f"agent/{developer_branch}"
 
-    # Get unique file paths that have fixable findings
+    # Get unique file paths that have fixable findings (may be empty)
     files_to_fix = list(set(
         f["file_path"].lstrip("/") for f in fixable_findings
         if f.get("file_path")
     ))
 
-    if not files_to_fix:
-        return {"aider_fix_applied": False, "aider_fix_summary": "No files to fix.", "agent_branch": ""}
-
     try:
-        token = await get_azure_devops_token()
+        token = asyncio.run(get_azure_devops_token())
 
         # ------------------------------------------------------------------
         # STEP B: Create agent branch in ADO from tip of developer_branch
         # ------------------------------------------------------------------
         from src.azure_client.pr_client import create_branch
         try:
-            created = await create_branch(state.repository_id, agent_branch, developer_branch)
+            created = asyncio.run(create_branch(state.repository_id, agent_branch, developer_branch))
             log.info("agent_branch_created", branch=agent_branch, success=created)
         except Exception as e:
             # Branch may already exist — that is fine, push will update it
@@ -118,16 +116,32 @@ async def run(state: PRReviewState) -> dict:
 
         # ------------------------------------------------------------------
         # STEP C: Fetch and checkout the agent branch LOCALLY
+        # The fetch may fail (branch doesn't exist remotely yet) — that's OK.
+        # The checkout MUST succeed — if it fails, we abort immediately rather
+        # than letting Aider edit files on the wrong branch (e.g. main).
         # ------------------------------------------------------------------
         subprocess.run(
             ["git", "-c", f"http.extraheader=AUTHORIZATION: bearer {token}",
              "fetch", "origin", f"{agent_branch}:{agent_branch}"],
             cwd=repo_path, check=False, capture_output=True,
         )
-        subprocess.run(
-            ["git", "checkout", agent_branch],
-            cwd=repo_path, check=True, capture_output=True,
-        )
+        try:
+            checkout_result = subprocess.run(
+                ["git", "checkout", agent_branch],
+                cwd=repo_path, check=True, capture_output=True, text=True,
+            )
+            log.info("agent_branch_checked_out", branch=agent_branch)
+        except subprocess.CalledProcessError as e:
+            log.error(
+                "agent_branch_checkout_failed",
+                branch=agent_branch,
+                stderr=e.stderr.strip(),
+            )
+            return {
+                "aider_fix_applied": False,
+                "aider_fix_summary": f"Git checkout of '{agent_branch}' failed — aborting to avoid editing the wrong branch. Error: {e.stderr.strip()}",
+                "agent_branch": agent_branch,
+            }
         subprocess.run(
             ["git", "-c", f"http.extraheader=AUTHORIZATION: bearer {token}",
              "pull", "origin", agent_branch, "--rebase"],
@@ -136,6 +150,7 @@ async def run(state: PRReviewState) -> dict:
 
         # ---------------------------------------------------------
         # STEP D: Process ONE file at a time on the agent branch
+        # Only runs if there are high-confidence LLM findings to fix.
         # Each file gets its own Aider call + validation gate.
         # If one file breaks, only that file is discarded —
         # the rest are still committed safely.
@@ -144,21 +159,21 @@ async def run(state: PRReviewState) -> dict:
         files_skipped = []
         files_kept_with_warnings = []
 
-        for file_path in files_to_fix:
+        if fixable_findings and files_to_fix:
+            for file_path in files_to_fix:
+                # Build a targeted prompt for THIS file only
+                file_findings = [
+                    f for f in fixable_findings
+                    if f.get("file_path", "").lstrip("/") == file_path
+                ]
+                file_instructions = []
+                for i, finding in enumerate(file_findings, 1):
+                    file_instructions.append(
+                        f"{i}. ({finding.get('line_number', '')}): "
+                        f"{finding.get('suggestion', finding.get('description', ''))}"
+                    )
 
-            # Build a targeted prompt for THIS file only
-            file_findings = [
-                f for f in fixable_findings
-                if f.get("file_path", "").lstrip("/") == file_path
-            ]
-            file_instructions = []
-            for i, finding in enumerate(file_findings, 1):
-                file_instructions.append(
-                    f"{i}. ({finding.get('line_number', '')}): "
-                    f"{finding.get('suggestion', finding.get('description', ''))}"
-                )
-
-            base_file_prompt = f"""You are a precise, conservative code-fixing assistant working on exactly ONE file.                        
+                base_file_prompt = f"""You are a precise, conservative code-fixing assistant working on exactly ONE file.                        
                                                                                                                                                  
     First, read the current content of `{file_path}` carefully before changing anything.                                                         
     Do not rely on assumed line numbers below if the file content has shifted — locate                                                           
@@ -219,156 +234,158 @@ async def run(state: PRReviewState) -> dict:
        code change to fix the issue, you must SKIP the issue and make NO changes.
     9. Keep all existing business logic, function signatures, and behavior intact
        except where a listed issue explicitly requires a change.                                                                                 
-    9. If you are not confident a fix is correct, leave that issue unresolved                                                                    
-       rather than applying a speculative or partial change.                                                                                     
-    10. Ensure the file remains syntactically valid after your changes (valid                                                                    
+    10. If you are not confident a fix is correct, leave that issue unresolved                                                                    
+        rather than applying a speculative or partial change.                                                                                     
+    11. Ensure the file remains syntactically valid after your changes (valid                                                                    
         Python or valid SQL, as applicable). Before finishing, re-read the exact                                                                 
         lines you changed and confirm each is a single complete, valid statement                                                                 
         with no orphaned fragments of the old code left behind.                                                                                  
-    11. Do not add comments narrating what you changed unless a comment is                                                                       
+    12. Do not add comments narrating what you changed unless a comment is                                                                       
         required to explain a non-obvious security fix.                                                                                          
-    12. Write the fix in a style that passes lint on the first attempt:                                                                          
+    13. Write the fix in a style that passes lint on the first attempt:                                                                          
         - Python: PEP 8, ruff-clean.
         - SQL: sqlfluff ansi dialect, jinja templater.
-    13. Never leak or reintroduce secrets.
+    14. Never leak or reintroduce secrets.
+    15. CRITICAL: When using SEARCH/REPLACE blocks, the SEARCH block must exactly match the existing code character-for-character, including all spaces, indentation, and blank lines. If you miss a single space, the edit will fail.
     """
 
-            log.info("aider_llm_fix_file_start", file=file_path)
+                log.info("aider_llm_fix_file_start", file=file_path)
 
-            is_sql = file_path.endswith(".sql")
-            baseline_ruff = set() if is_sql else _ruff_codes(repo_path, file_path)
-            baseline_sqlfluff = _sqlfluff_codes(repo_path, file_path) if is_sql else set()
+                is_sql = file_path.endswith(".sql")
+                baseline_ruff = set() if is_sql else _ruff_codes(repo_path, file_path)
+                baseline_sqlfluff = _sqlfluff_codes(repo_path, file_path) if is_sql else set()
 
-            fixed = False
-            feedback = ""
+                fixed = False
+                feedback = ""
 
-            for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
-                prompt = base_file_prompt
-                if feedback:
-                    prompt += (
-                        "\n\nYour previous attempt introduced NEW lint errors that were not "
-                        f"present before your change:\n{feedback}\n\n"
-                        "Fix these specific errors without reintroducing the original issue, "
-                        "and without touching anything else in the file."
+                for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
+                    prompt = base_file_prompt
+                    if feedback:
+                        prompt += (
+                            "\n\nYour previous attempt introduced NEW lint errors that were not "
+                            f"present before your change:\n{feedback}\n\n"
+                            "Fix these specific errors without reintroducing the original issue, "
+                            "and without touching anything else in the file."
+                        )
+
+                    aider_cmd = [
+                        "aider",
+                        "--yes",
+                        "--no-gui",
+                        "--no-show-release-notes",
+                        "--no-show-model-warnings",
+                        "--no-check-update",
+                        "--no-auto-commits",
+                        "--no-stream",
+                        "--no-git",
+                        "--map-tokens", "1024",
+                        "--lint-cmd", "python: ruff check",
+                        "--auto-lint",
+                        "--model", "bedrock/amazon.nova-pro-v1:0",
+                        "--message", prompt,
+                        file_path,
+                    ]
+
+                    result = subprocess.run(
+                        aider_cmd,
+                        cwd=repo_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                        stdin=subprocess.DEVNULL,
+                    )
+                    log.info(
+                        "aider_llm_fix_file_output",
+                        file=file_path, attempt=attempt, returncode=result.returncode,
                     )
 
-                aider_cmd = [
-                    "aider",
-                    "--yes",
-                    "--no-gui",
-                    "--no-show-release-notes",
-                    "--no-show-model-warnings",
-                    "--no-check-update",
-                    "--no-auto-commits",
-                    "--no-stream",
-                    "--no-git",
-                    "--map-tokens", "1024",
-                    "--edit-format", "diff",
-                    "--lint-cmd", "python: ruff check",
-                    "--auto-lint",
-                    "--model", "bedrock/amazon.nova-pro-v1:0",
-                    "--message", prompt,
-                    file_path,
-                ]
-
-                result = subprocess.run(
-                    aider_cmd,
-                    cwd=repo_path,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                    stdin=subprocess.DEVNULL,
-                )
-                log.info(
-                    "aider_llm_fix_file_output",
-                    file=file_path, attempt=attempt, returncode=result.returncode,
-                )
-
-                subprocess.run(["ruff", "format", file_path], cwd=repo_path, capture_output=True)
-                subprocess.run(
-                    ["ruff", "check", "--fix", "--unsafe-fixes", file_path],
-                    cwd=repo_path, capture_output=True,
-                )
-                if is_sql:
+                    subprocess.run(["ruff", "format", file_path], cwd=repo_path, capture_output=True)
                     subprocess.run(
-                        ["sqlfluff", "fix", file_path, "--dialect", "ansi", "--templater", "jinja", "--force"],
+                        ["ruff", "check", "--fix", "--unsafe-fixes", file_path],
                         cwd=repo_path, capture_output=True,
                     )
+                    if is_sql:
+                        subprocess.run(
+                            ["sqlfluff", "fix", file_path, "--dialect", "ansi", "--templater", "jinja", "--force"],
+                            cwd=repo_path, capture_output=True,
+                        )
 
-                new_ruff = set() if is_sql else _ruff_codes(repo_path, file_path)
-                new_sqlfluff = _sqlfluff_codes(repo_path, file_path) if is_sql else set()
-                introduced_ruff = new_ruff - baseline_ruff
-                introduced_sqlfluff = new_sqlfluff - baseline_sqlfluff
+                    new_ruff = set() if is_sql else _ruff_codes(repo_path, file_path)
+                    new_sqlfluff = _sqlfluff_codes(repo_path, file_path) if is_sql else set()
+                    introduced_ruff = new_ruff - baseline_ruff
+                    introduced_sqlfluff = new_sqlfluff - baseline_sqlfluff
 
-                if not introduced_ruff and not introduced_sqlfluff:
-                    files_fixed.append(file_path)
-                    fixed = True
-                    log.info("aider_llm_fix_file_passed", file=file_path, attempt=attempt)
-                    break
+                    if not introduced_ruff and not introduced_sqlfluff:
+                        files_fixed.append(file_path)
+                        fixed = True
+                        log.info("aider_llm_fix_file_passed", file=file_path, attempt=attempt)
+                        break
 
-                feedback = (
-                    f"Ruff codes newly introduced: {sorted(introduced_ruff)}\n"
-                    f"Sqlfluff codes newly introduced: {sorted(introduced_sqlfluff)}"
-                )
-                log.warning(
-                    "aider_llm_fix_file_attempt_failed",
-                    file=file_path, attempt=attempt,
-                    introduced_ruff=sorted(introduced_ruff),
-                    introduced_sqlfluff=sorted(introduced_sqlfluff),
-                )
-
-            if not fixed:
-                has_major_critical = any(
-                    str(f.get("severity", "")).lower() in ("major", "critical")
-                    for f in file_findings
-                )
-                if has_major_critical and _is_syntactically_valid(repo_path, file_path):
-                    files_fixed.append(file_path)
-                    files_kept_with_warnings.append(file_path)
+                    feedback = (
+                        f"Ruff codes newly introduced: {sorted(introduced_ruff)}\n"
+                        f"Sqlfluff codes newly introduced: {sorted(introduced_sqlfluff)}"
+                    )
                     log.warning(
-                        "aider_llm_fix_file_kept_with_lint_warnings",
-                        file=file_path, remaining_issues=feedback,
+                        "aider_llm_fix_file_attempt_failed",
+                        file=file_path, attempt=attempt,
+                        introduced_ruff=sorted(introduced_ruff),
+                        introduced_sqlfluff=sorted(introduced_sqlfluff),
                     )
-                else:
-                    subprocess.run(["git", "checkout", "--", file_path], cwd=repo_path, capture_output=True)
-                    subprocess.run(["git", "clean", "-fd", "--", file_path], cwd=repo_path, capture_output=True)
-                    files_skipped.append(file_path)
-                    log.error(
-                        "aider_llm_fix_file_discarded_unparseable",
-                        file=file_path, last_feedback=feedback,
+
+                if not fixed:
+                    has_major_critical = any(
+                        str(f.get("severity", "")).lower() in ("major", "critical")
+                        for f in file_findings
                     )
+                    if has_major_critical and _is_syntactically_valid(repo_path, file_path):
+                        files_fixed.append(file_path)
+                        files_kept_with_warnings.append(file_path)
+                        log.warning(
+                            "aider_llm_fix_file_kept_with_lint_warnings",
+                            file=file_path, remaining_issues=feedback,
+                        )
+                    else:
+                        subprocess.run(["git", "checkout", "--", file_path], cwd=repo_path, capture_output=True)
+                        subprocess.run(["git", "clean", "-fd", "--", file_path], cwd=repo_path, capture_output=True)
+                        files_skipped.append(file_path)
+                        log.error(
+                            "aider_llm_fix_file_discarded_unparseable",
+                            file=file_path, last_feedback=feedback,
+                        )
+
+        # end of `if fixable_findings and files_to_fix` block
+
 
         # ------------------------------------------------------------------
-        # STEP E: Commit to the AGENT branch (never git add -A)
+        # STEP E: Commit LLM fixes to the AGENT branch (only if changes exist)
         # ------------------------------------------------------------------
         if files_fixed:
             subprocess.run(["git", "add", "--", *files_fixed], cwd=repo_path, check=True, capture_output=True)
 
-        diff_result = subprocess.run(
+        llm_diff = subprocess.run(
             ["git", "diff", "--cached", "--quiet"],
             cwd=repo_path, capture_output=True,
         )
 
-        if diff_result.returncode == 0:
-            summary = "Aider ran but found no changes to apply."
-            log.info("aider_llm_fix_no_changes")
-            return {"aider_fix_applied": False, "aider_fix_summary": summary, "agent_branch": agent_branch}
-
-        skipped_note = f"\nDiscarded (unparseable after retries): {files_skipped}" if files_skipped else ""
-        warning_note = (
-            f"\nCommitted with unresolved lint warnings: {files_kept_with_warnings}"
-            if files_kept_with_warnings else ""
-        )
-        commit_msg = (
-            f"fix(ai-review): apply {len(fixable_findings)} auto-fix suggestion(s)\n\n"
-            f"Applied by AI Review Agent using Aider + Amazon Bedrock Nova Pro.\n"
-            f"Files fixed: {files_fixed}{skipped_note}{warning_note}\n"
-            f"Original PR: {state.pr_url}"
-        )
-        subprocess.run(
-            ["git", "commit", "-m", commit_msg],
-            cwd=repo_path, check=True, capture_output=True,
-        )
+        if llm_diff.returncode != 0:
+            # There are staged LLM fixes — commit them
+            skipped_note = f"\nDiscarded (unparseable after retries): {files_skipped}" if files_skipped else ""
+            warning_note = (
+                f"\nCommitted with unresolved lint warnings: {files_kept_with_warnings}"
+                if files_kept_with_warnings else ""
+            )
+            commit_msg = (
+                f"fix(ai-review): apply {len(fixable_findings)} auto-fix suggestion(s)\n\n"
+                f"Applied by AI Review Agent using Aider + Amazon Bedrock Nova Pro.\n"
+                f"Files fixed: {files_fixed}{skipped_note}{warning_note}\n"
+                f"Original PR: {state.pr_url}"
+            )
+            subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=repo_path, check=True, capture_output=True,
+            )
+        else:
+            log.info("aider_llm_fix_no_llm_changes", reason="no fixable findings or Aider made no edits")
 
         # ------------------------------------------------------------------
         # STEP F: Local CI Loop — ruff + sqlfluff on whole repo, up to 3x
@@ -437,8 +454,26 @@ async def run(state: PRReviewState) -> dict:
                 log.warning("local_ci_max_attempts_reached", final_attempt=ci_attempt)
 
         # ------------------------------------------------------------------
-        # STEP G: Push ONLY the agent branch to origin
+        # STEP G: Smart push — only push if something actually changed
+        # Compare local HEAD to remote HEAD to avoid empty pushes
         # ------------------------------------------------------------------
+        local_hash = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo_path, capture_output=True, text=True
+        ).stdout.strip()
+        remote_hash_result = subprocess.run(
+            ["git", "rev-parse", f"origin/{agent_branch}"],
+            cwd=repo_path, capture_output=True, text=True
+        )
+        remote_hash = remote_hash_result.stdout.strip() if remote_hash_result.returncode == 0 else ""
+
+        if local_hash == remote_hash:
+            log.info("aider_llm_fix_no_net_changes", reason="local HEAD matches remote, nothing to push")
+            return {
+                "aider_fix_applied": False,
+                "aider_fix_summary": "CI passed with no changes needed. Branch is already clean.",
+                "agent_branch": agent_branch,
+            }
+
         subprocess.run(
             ["git", "-c", f"http.extraheader=AUTHORIZATION: bearer {token}",
              "push", "origin", agent_branch],
@@ -446,13 +481,21 @@ async def run(state: PRReviewState) -> dict:
         )
         log.info("agent_branch_pushed", branch=agent_branch, ci_passed=ci_passed)
 
-        summary = (
-            f"Fixed {len(files_fixed)} file(s) on branch `{agent_branch}`."
-            + (f" {len(files_kept_with_warnings)} file(s) kept with lint warnings." if files_kept_with_warnings else "")
-            + (f" Discarded {len(files_skipped)} file(s) as unparseable." if files_skipped else "")
-            + (" Local CI passed." if ci_passed else f" Local CI still failing after {MAX_CI_LINT_ATTEMPTS} attempts — PR raised anyway.")
-        )
-        log.info("aider_llm_fix_committed", branch=agent_branch, fixed=files_fixed)
+        had_llm_fixes = bool(files_fixed)
+        if had_llm_fixes:
+            summary = (
+                f"Fixed {len(files_fixed)} file(s) from LLM review on branch `{agent_branch}`."
+                + (f" {len(files_kept_with_warnings)} file(s) kept with lint warnings." if files_kept_with_warnings else "")
+                + (f" Discarded {len(files_skipped)} file(s) as unparseable." if files_skipped else "")
+                + (" Local CI passed." if ci_passed else f" Local CI still failing after {MAX_CI_LINT_ATTEMPTS} attempts — PR raised anyway.")
+            )
+        else:
+            summary = (
+                f"0 high-confidence LLM findings. CI/lint issues were found and fixed on branch `{agent_branch}`."
+                + (" Local CI passed after fixes." if ci_passed else f" Local CI still failing after {MAX_CI_LINT_ATTEMPTS} attempts — PR raised anyway.")
+            )
+
+        log.info("aider_llm_fix_committed", branch=agent_branch, fixed=files_fixed, ci_only=not had_llm_fixes)
         return {"aider_fix_applied": True, "aider_fix_summary": summary, "agent_branch": agent_branch}
 
     except subprocess.TimeoutExpired:

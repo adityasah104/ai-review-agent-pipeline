@@ -6,7 +6,7 @@ from src.config.settings import settings
 
 log = structlog.get_logger()
 
-def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
+async def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
     pr_id = state.pr_id
     findings = state.findings
 
@@ -55,8 +55,9 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
     print("--------------------------------------\n")
 
     try:
-        # Synchronous request with long timeout since PR-Agent runs on localhost
-        response = httpx.post(settings.PR_AGENT_REFINE_URL, json=payload, timeout=300.0)
+        # Async request with long timeout since PR-Agent runs on localhost
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(settings.PR_AGENT_REFINE_URL, json=payload)
         response.raise_for_status()
         
         refined_findings = response.json().get("refined_findings", [])

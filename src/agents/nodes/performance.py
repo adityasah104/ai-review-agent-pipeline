@@ -50,8 +50,8 @@ async def run(state: PRReviewState) -> dict:
         diff = state.file_diffs.get(path, "No diff available.")
         
         files_text += f"\n\n### File: {path}\n"
-        files_text += f"--- FULL FILE WITH LINE NUMBERS ---\n```\n{numbered_content[:4000]}\n```\n"
-        files_text += f"--- CHANGED LINES (diff) ---\n```diff\n{diff[:2000]}\n```\n"
+        files_text += f"--- FULL FILE WITH LINE NUMBERS ---\n```\n{numbered_content[:8000]}\n```\n"
+        files_text += f"--- CHANGED LINES (diff) ---\n```diff\n{diff[:4000]}\n```\n"
 
     prompt = f"""You are a ruthless performance engineering expert reviewing Python and SQL code.                                                
                                                                                                                                                  

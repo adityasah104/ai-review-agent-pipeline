@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph, START, END
 from src.agents.state import PRReviewState
 from src.agents.nodes import (
     ingestion,
-    context_retrieval,
+
     code_quality,
     security_audit,
     performance,
@@ -20,7 +20,7 @@ def build_graph() -> StateGraph:
     builder = StateGraph(PRReviewState)
 
     builder.add_node("pr_ingestion", ingestion.run)
-    builder.add_node("context_retrieval", context_retrieval.run)
+
     builder.add_node("code_quality", code_quality.run)
     builder.add_node("security_audit", security_audit.run)
     builder.add_node("performance_analysis", performance.run)
@@ -30,10 +30,9 @@ def build_graph() -> StateGraph:
     builder.add_node("publish_review", publish_review.run)
 
     builder.add_edge(START, "pr_ingestion")
-    builder.add_edge("pr_ingestion", "context_retrieval")
-    builder.add_edge("context_retrieval", "code_quality")
-    builder.add_edge("context_retrieval", "security_audit")
-    builder.add_edge("context_retrieval", "performance_analysis")
+    builder.add_edge("pr_ingestion", "code_quality")
+    builder.add_edge("pr_ingestion", "security_audit")
+    builder.add_edge("pr_ingestion", "performance_analysis")
     builder.add_edge("code_quality", "fetch_pr_agent_suggestions")
     builder.add_edge("security_audit", "fetch_pr_agent_suggestions")
     builder.add_edge("performance_analysis", "fetch_pr_agent_suggestions")

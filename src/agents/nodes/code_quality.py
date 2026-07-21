@@ -18,13 +18,8 @@ async def run(state: PRReviewState) -> dict:
 
     files_text = build_file_context(state)
 
-    rag_text = "\n".join(state.rag_context[:4]) if state.rag_context else "No guidelines available."
-
     prompt = f"""\
 You are a ruthless, senior code reviewer specializing in Python and dbt/SQL.
-
-Relevant coding guidelines from our internal standards:
-{rag_text}
 
 CRITICAL RULES (violating any of these makes your review invalid):
 1. DO NOT invent or hallucinate issues. If the code is perfectly fine, return an empty

@@ -14,13 +14,9 @@ async def run(state: PRReviewState) -> dict:
         return {"findings": []}
 
     files_text = build_file_context(state)
-    rag_text = "\n".join(state.rag_context[:2]) if state.rag_context else ""
-    rag_text_formatted = f"Relevant security guidelines: {rag_text}" if rag_text else ""
 
     prompt = f"""\
 You are a ruthless security engineer reviewing Python and SQL code for vulnerabilities.
-
-{rag_text_formatted}
 
 CRITICAL RULES (violating any of these makes your review invalid):
 1. DO NOT invent or hallucinate issues. If the code is perfectly fine, return an empty

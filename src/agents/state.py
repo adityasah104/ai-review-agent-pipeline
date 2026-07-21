@@ -61,8 +61,7 @@ class PRReviewState(BaseModel):
     ci_log_summary: str = ""
     ci_fix_attempts: int = 0
 
-    # RAG context from ChromaDB
-    rag_context: List[str] = Field(default_factory=list)
+
 
     # Parallel LLM agent findings — uses append reducer to avoid fan-out overwrite
     findings: Annotated[List[Dict[str, Any]], append_findings] = Field(default_factory=list)

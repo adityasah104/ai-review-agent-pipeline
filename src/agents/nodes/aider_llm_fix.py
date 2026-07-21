@@ -449,6 +449,14 @@ Strict rules — follow all of them:
         ci_passed = False
         for ci_attempt in range(1, MAX_CI_LINT_ATTEMPTS + 1):
             log.info("local_ci_check", attempt=ci_attempt)
+            
+            # --- Global Native Auto-Fixes ---
+            subprocess.run(["ruff", "format", "src/"], cwd=repo_path, capture_output=True)
+            subprocess.run(["ruff", "check", "--fix", "--unsafe-fixes", "src/"], cwd=repo_path, capture_output=True)
+            if os.path.exists(os.path.join(repo_path, "models")):
+                subprocess.run(["sqlfluff", "fix", "models/", "--dialect", "ansi", "--force"], cwd=repo_path, capture_output=True)
+            
+            # Re-check what remains
             ruff_result = subprocess.run(
                 ["ruff", "check", "src/"], cwd=repo_path, capture_output=True, text=True
             )
@@ -472,17 +480,30 @@ Strict rules — follow all of them:
                 if not sqlfluff_ok:
                     ci_errors += f"=== SQLFluff errors ===\n{sqlfluff_result.stdout}\n"
                 log.warning("local_ci_failed_retrying", attempt=ci_attempt)
+                # Extract failing files dynamically from stdout
+                import re
+                failing_files = set()
+                if not ruff_ok:
+                    matches = re.findall(r"(?m)^([a-zA-Z0-9_./-]+):\d+:\d+:", ruff_result.stdout)
+                    failing_files.update(matches)
+                if not sqlfluff_ok:
+                    matches = re.findall(r"([a-zA-Z0-9_./-]+\.sql)", sqlfluff_result.stdout, re.IGNORECASE)
+                    failing_files.update(matches)
+                failing_files = failing_files if failing_files else set(files_fixed)
 
-                for fp in files_fixed:
+                for fp in failing_files:
+                    if not os.path.exists(os.path.join(repo_path, fp)):
+                        continue
+                        
                     ci_prompt = (
-                            f"STOP. Your previous fix broke the build. The local lint CI failed on branch '{agent_branch}'.\n\n"
-                            f"EXACT LINT ERRORS:\n{ci_errors}\n\n"
-                            f"You MUST fix these specific lint errors in `{fp}` immediately.\n"
-                            f"Strict Rules:\n"
-                            f"- Fix ONLY the lint errors above. Do NOT touch, rename, or change any business logic.\n"
-                            f"- Ensure the file is syntactically valid.\n"
-                            f"- If it is a SQL file, ensure exactly one clause per line for SELECT/FROM/WHERE, and preserve all column names."   
-                        )
+                        f"STOP. The local lint CI failed on branch '{agent_branch}'.\n\n"
+                        f"EXACT LINT ERRORS:\n{ci_errors}\n\n"
+                        f"You MUST fix these specific lint errors in `{fp}` immediately.\n"
+                        f"Strict Rules:\n"
+                        f"- Fix ONLY the lint errors above. Do NOT touch, rename, or change any business logic.\n"
+                        f"- Ensure the file is syntactically valid.\n"
+                        f"- If it is a SQL file, ensure exactly one clause per line for SELECT/FROM/WHERE, and preserve all column names."   
+                    )
                     aider_ci_cmd = [
                         "aider", "--yes", "--no-gui", "--no-show-release-notes",
                         "--no-show-model-warnings", "--no-check-update",
@@ -496,8 +517,6 @@ Strict rules — follow all of them:
                         aider_ci_cmd, cwd=repo_path, capture_output=True,
                         text=True, timeout=150, stdin=subprocess.DEVNULL,
                     )
-                    subprocess.run(["ruff", "format", fp], cwd=repo_path, capture_output=True)
-                    subprocess.run(["ruff", "check", "--fix", "--unsafe-fixes", fp], cwd=repo_path, capture_output=True)
 
                 subprocess.run(["git", "add", "-A"], cwd=repo_path, capture_output=True)
                 diff_after = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=repo_path, capture_output=True)

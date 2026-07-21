@@ -11,6 +11,7 @@ def _call_bedrock(prompt: str) -> str:
     """Calls Amazon Bedrock Nova Pro and returns response text."""
     client = boto3.client("bedrock-runtime", region_name=settings.AWS_REGION)
     body = {
+        "system": [{"text": "You are a strict code review assistant. You ONLY report issues that exactly match the explicit checklist given to you. You do NOT use general knowledge, common sense, or best-practice opinions outside of what is explicitly listed. If a pattern is not in the checklist, you MUST ignore it entirely."}],
         "messages": [
             {
                 "role": "user",
@@ -77,12 +78,13 @@ CRITICAL RULES (violating any of these makes your review invalid):
 4. If a piece of code is stylized a certain way but is functionally correct and not a
    security risk, leave it alone. Do not report subjective style preferences,
    nitpicks, or "could be cleaner" suggestions.
+5. YOU MUST ONLY CHECK FOR THE ISSUES IN THE STRICT CHECKLIST BELOW. Do NOT use your general knowledge.
 
 Review the following code changes for SEVERE CODE QUALITY and LOGIC issues only.
 You MUST ONLY report actionable bugs that require an immediate code change.
 DO NOT report nitpicks (e.g., missing docstrings, PEP 8 style issues, minor naming conventions, or subjective refactoring suggestions).
 
-Look for:
+STRICT CHECKLIST - Look ONLY for these exact issues:
 Severe logic errors, unhandled exceptions, or broken functionality
 Hardcoded values that should be constants or environment variables
 dbt model naming convention violations that break DAG execution

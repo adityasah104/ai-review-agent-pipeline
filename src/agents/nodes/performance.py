@@ -10,6 +10,7 @@ log = structlog.get_logger()
 def _call_bedrock(prompt: str) -> str:
     client = boto3.client("bedrock-runtime", region_name=settings.AWS_REGION)
     body = {
+        "system": [{"text": "You are a strict code review assistant. You ONLY report issues that exactly match the explicit checklist given to you. You do NOT use general knowledge, common sense, or best-practice opinions outside of what is explicitly listed. If a pattern is not in the checklist, you MUST ignore it entirely."}],
         "messages": [
             {
                 "role": "user",
@@ -68,12 +69,13 @@ async def run(state: PRReviewState) -> dict:
     4. If a piece of code is stylized a certain way but is functionally correct and not a                                                        
        security risk, leave it alone. Do not report subjective style preferences,                                                                
        nitpicks, or theoretical micro-optimizations.                                                                                             
-                                                                                                                                                 
+    5. YOU MUST ONLY CHECK FOR THE ISSUES IN THE STRICT CHECKLIST BELOW. Do NOT use your general knowledge.
+
     Review the following code for SEVERE PERFORMANCE issues only.                                                                                
     You MUST ONLY report actionable bottlenecks that require an immediate code change.                                                           
     DO NOT report micro-optimizations, theoretical scaling concerns, or minor nitpicks.                                                          
                                                                                                                                                  
-    Look for:                                                                                                                                    
+    STRICT CHECKLIST - Look ONLY for these exact issues:                                                                                                                                    
     N+1 query patterns in Python (loops that execute database queries)                                                                           
     Inefficient JOINs or missing partition/cluster keys in dbt models                                                                            
     SELECT * in SQL (fetches unnecessary columns)                                                                                                

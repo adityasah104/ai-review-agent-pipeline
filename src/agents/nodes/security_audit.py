@@ -10,6 +10,7 @@ log = structlog.get_logger()
 def _call_bedrock(prompt: str) -> str:
     client = boto3.client("bedrock-runtime", region_name=settings.AWS_REGION)
     body = {
+        "system": [{"text": "You are a strict code review assistant. You ONLY report issues that exactly match the explicit checklist given to you. You do NOT use general knowledge, common sense, or best-practice opinions outside of what is explicitly listed. If a pattern is not in the checklist, you MUST ignore it entirely."}],
         "messages": [
             {
                 "role": "user",
@@ -59,11 +60,18 @@ async def run(state: PRReviewState) -> dict:
 
 {f"Relevant security guidelines: {rag_text}" if rag_text else ""}
 
+CRITICAL RULES (violating any of these makes your review invalid):
+1. DO NOT invent or hallucinate issues. If the code is perfectly fine, return an empty
+   array []. You are NOT required to find a problem. Zero findings is a completely
+   normal, acceptable, and often correct result.
+2. DO NOT change or complain about business logic.
+3. YOU MUST ONLY CHECK FOR THE ISSUES IN THE STRICT CHECKLIST BELOW. Do NOT use your general knowledge.
+
 Review the following code for SEVERE SECURITY issues only.
 You MUST ONLY report actionable vulnerabilities that require an immediate code change.
 DO NOT report theoretical risks, subjective security "best practices", or minor nitpicks.
 
-Look for:
+STRICT CHECKLIST - Look ONLY for these exact issues:
 - SQL injection risks (string concatenation in SQL instead of parameterized queries)
 - Hardcoded credentials, API keys, passwords, or tokens
 - Insecure use of eval() or exec() in Python

@@ -75,6 +75,9 @@ def run(state: PRReviewState) -> dict:
     active_findings = state.refined_findings if state.refined_findings else state.findings
     log.info("aider_llm_fix_start", findings_count=len(active_findings))
 
+    import json
+    log.info("active_findings_dump", findings=json.dumps(active_findings, indent=2))
+
     # Filter: auto-fix minor, major, and critical that meet confidence threshold
     fixable_findings = [
         f for f in active_findings

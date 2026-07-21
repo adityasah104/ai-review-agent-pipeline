@@ -168,11 +168,10 @@ def run(state: PRReviewState) -> dict:
                     if f.get("file_path", "").lstrip("/") == file_path
                 ]
                 file_instructions = []
+                import json
                 for i, finding in enumerate(file_findings, 1):
-                    file_instructions.append(
-                        f"{i}. ({finding.get('line_number', '')}): "
-                        f"{finding.get('suggestion', finding.get('description', ''))}"
-                    )
+                    finding_str = json.dumps(finding, indent=2)
+                    file_instructions.append(f"--- ISSUE {i} ---\n{finding_str}\n")
 
                 base_file_prompt = f"""\
 You are a precise, conservative code-fixing assistant working on exactly ONE file.
@@ -191,6 +190,7 @@ Strict rules — follow all of them:
 2. Make ONLY the minimal change needed to resolve each listed issue. Do not
    refactor, rename, reformat, reorganize, or "clean up" any code that isn't
    part of a listed issue.
+   CRITICAL FOR PYTHON: If a fix requires wrapping code in a new block (e.g., adding a `with` statement, `try/except`, or `if`), you MUST properly indent all the existing lines that fall under that block. Failure to indent will cause a SyntaxError.
 3. It is acceptable to make NO changes to a specific issue if that issue
     does not clearly apply to the current code (already fixed, line shifted,
     or description doesn't match reality). HOWEVER: if a finding clearly

@@ -68,6 +68,12 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
             result = future.result()
         
         refined_findings = result.get("refined_findings", [])
+        
+        # Enforce that "best practice" is classified under "code_quality"
+        for finding in refined_findings:
+            if finding.get("category", "").lower().strip() == "best practice":
+                finding["category"] = "code_quality"
+                
         log.info("received_refined_findings_from_pr_agent_natively", pr_id=pr_id, count=len(refined_findings))
             
         return {"refined_findings": refined_findings}

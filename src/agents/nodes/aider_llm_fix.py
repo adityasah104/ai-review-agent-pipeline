@@ -188,14 +188,15 @@ def run(state: PRReviewState) -> dict:
     1. Only edit `{file_path}`. Do NOT touch, create, or delete any other file.                                                                  
     2. Make ONLY the minimal change needed to resolve each listed issue. Do not                                                                  
        refactor, rename, reformat, reorganize, or "clean up" any code that isn't                                                                 
-       part of a listed issue.                                                                                                                   
-    3. It is a completely acceptable outcome to make NO changes at all. If none                                                                  
-       of the listed issues clearly apply to the current code (already fixed,                                                                    
-       line shifted to something unrelated, description doesn't match reality,                                                                   
-       or you are not fully confident in the fix), leave the file untouched.                                                                     
-       Zero fixes is a valid and correct result — do NOT invent a change,                                                                        
-       rewrite something unrelated, or manufacture a "finding" just to produce                                                                   
-       a diff. A no-op is always better than a wrong or partial edit.                                                                            
+       part of a listed issue.                                                                                                   
+    3. It is acceptable to make NO changes to a specific issue if that issue
+        does not clearly apply to the current code (already fixed, line shifted,
+        or description doesn't match reality). HOWEVER: if a finding clearly
+        describes a real problem that exists in the current code, you MUST fix it.
+        Do NOT use "zero fixes" as a blanket excuse to avoid a fix you are capable
+        of making. A no-op is only correct when the issue genuinely does not apply.
+        Never invent a change, rewrite something unrelated, or manufacture a diff.
+                        
     4. When replacing a hardcoded secret with an environment variable lookup,                                                                    
        the replacement must be a single, complete, syntactically valid                                                                           
        expression — never a partial edit that leaves both the old and new code                                                                   
@@ -247,6 +248,18 @@ def run(state: PRReviewState) -> dict:
         - SQL: sqlfluff ansi dialect, jinja templater.
     14. Never leak or reintroduce secrets.
     15. CRITICAL: When using SEARCH/REPLACE blocks, the SEARCH block must exactly match the existing code character-for-character, including all spaces, indentation, and blank lines. If you miss a single space, the edit will fail.
+    16. ALREADY-CORRECT CODE RULE: Before editing any line, verify the current code
+        does NOT already implement the fix correctly. If the code already does what
+        the finding asks (e.g. it is already using a parameterized query, already
+        using os.getenv, already has the correct decorator), you MUST leave that
+        line completely untouched — including its whitespace, spacing, and syntax.
+        Do NOT "improve" correct code. Do NOT reformat correct code. Do NOT alter
+        spacing around operators (e.g. `= ?` must not become `=?`). If it is
+        already correct, skip the finding entirely.
+    17. PRESERVE EXISTING COMMENTS: Do NOT rewrite, replace, or change the wording
+        of existing comments in the file. If a comment like `# CLEAN:` or
+        `# NOTE:` already exists, leave it exactly as-is. Only add a new comment
+        if one is strictly required to explain a non-obvious security fix (rule 12).
     """
 
                 log.info("aider_llm_fix_file_start", file=file_path)

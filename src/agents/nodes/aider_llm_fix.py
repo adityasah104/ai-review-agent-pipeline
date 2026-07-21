@@ -560,7 +560,11 @@ Strict rules — follow all of them:
             )
 
         log.info("aider_llm_fix_committed", branch=agent_branch, fixed=files_fixed, ci_only=not had_llm_fixes)
-        return {"aider_fix_applied": True, "aider_fix_summary": summary, "agent_branch": agent_branch}
+        return {
+            "aider_fix_applied": had_llm_fixes,
+            "aider_fix_summary": summary,
+            "agent_branch": agent_branch,
+        }
 
     except subprocess.TimeoutExpired:
         log.error("aider_llm_fix_timeout")

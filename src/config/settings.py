@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # Aider
     AIDER_MAX_CI_RETRIES: int = 2
-    MIN_FIX_CONFIDENCE: float = 0.70
+    MIN_FIX_CONFIDENCE: float = 0.85
 
     # New Hybrid Integration
     PR_AGENT_REFINE_URL: str = "http://localhost:8000/api/pr-agent/submit"

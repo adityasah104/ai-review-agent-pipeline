@@ -73,7 +73,30 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
         for finding in refined_findings:
             if finding.get("category", "").lower().strip() == "best practice":
                 finding["category"] = "code_quality"
-                
+
+        # Drop suggestions where improved_code only *appends* lines on top of existing_code
+        # without actually modifying the flagged line itself. These are opinionated additions
+        # (e.g. adding a ValueError guard after an os.getenv call) — not real fixes.
+        def _is_additive_only(finding: dict) -> bool:
+            existing = (finding.get("existing_code") or "").strip()
+            improved = (finding.get("improved_code") or "").strip()
+            if not existing or not improved:
+                return False
+            # If every line of existing_code appears verbatim in improved_code AND
+            # improved_code has more lines, the suggestion only adds new lines.
+            existing_lines = [l.strip() for l in existing.splitlines() if l.strip()]
+            improved_lines = [l.strip() for l in improved.splitlines() if l.strip()]
+            if not existing_lines:
+                return False
+            all_existing_preserved = all(line in improved_lines for line in existing_lines)
+            return all_existing_preserved and len(improved_lines) > len(existing_lines)
+
+        before_count = len(refined_findings)
+        refined_findings = [f for f in refined_findings if not _is_additive_only(f)]
+        dropped = before_count - len(refined_findings)
+        if dropped:
+            log.info("fetch_pr_agent_dropped_additive_suggestions", dropped=dropped)
+
         log.info("received_refined_findings_from_pr_agent_natively", pr_id=pr_id, count=len(refined_findings))
             
         return {"refined_findings": refined_findings}

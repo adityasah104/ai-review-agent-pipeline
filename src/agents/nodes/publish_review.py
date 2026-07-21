@@ -66,15 +66,28 @@ def _build_comment(state: PRReviewState) -> str:
     # Use refined findings if available, otherwise fallback to raw findings
     findings = state.refined_findings if state.refined_findings else state.findings
     
-    if findings:                                                                                                                             
-            lines.append("Review-agent found these issues and applied fixes on a separate agent branch:")                                        
-            lines.append("")                                                                                                                     
-            _findings_table(findings, lines)                                                                                                     
-    else:                                                                                                                                    
-            # If there are no findings, output a clear "Good to go" message!                                                                     
-        lines.append("### ✅ Code is Good to Go!")                                                                                           
-        lines.append("")                                                                                                                     
-        lines.append("I have reviewed the changes in this PR and found no issues. No agent branch or fixes were needed.")                    
+    high_confidence_findings = [f for f in findings if float(f.get("confidence", 0.0)) >= settings.MIN_FIX_CONFIDENCE]
+    low_confidence_findings = [f for f in findings if float(f.get("confidence", 0.0)) < settings.MIN_FIX_CONFIDENCE]
+
+    if high_confidence_findings:
+        lines.append("Review-agent found these issues and applied fixes on a separate agent branch:")
+        lines.append("")
+        _findings_table(high_confidence_findings, lines)
+        if low_confidence_findings:
+            lines.append("### ⚠️ Additional Low-Confidence Findings")
+            lines.append("The following issues were flagged but skipped for auto-fixing due to low confidence:")
+            lines.append("")
+            _findings_table(low_confidence_findings, lines)
+    elif low_confidence_findings:
+        lines.append("### ✅ Code is mostly Good to Go!")
+        lines.append("")
+        lines.append("There were no high-confidence issues that required agent auto-fixes, but the following low-confidence issues were flagged for your review:")
+        lines.append("")
+        _findings_table(low_confidence_findings, lines)
+    else:
+        lines.append("### ✅ Code is Good to Go!")
+        lines.append("")
+        lines.append("I have reviewed the changes in this PR and found no issues. No agent branch or fixes were needed.")
         lines.append("")
 
     return "\n".join(lines)

@@ -457,6 +457,15 @@ Strict rules — follow all of them:
             if os.path.exists(os.path.join(repo_path, "models")):
                 subprocess.run(["sqlfluff", "fix", "models/", "--dialect", "ansi", "--force"], cwd=repo_path, capture_output=True)
             
+            # Commit any native auto-fixes immediately before checking if CI passes
+            subprocess.run(["git", "add", "-A"], cwd=repo_path, capture_output=True)
+            diff_format = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=repo_path, capture_output=True)
+            if diff_format.returncode != 0:
+                subprocess.run(
+                    ["git", "commit", "-m", f"fix(ci): native auto-format attempt {ci_attempt}"],
+                    cwd=repo_path, check=False, capture_output=True,
+                )
+
             # Re-check what remains
             ruff_result = subprocess.run(
                 ["ruff", "check", "src/"], cwd=repo_path, capture_output=True, text=True

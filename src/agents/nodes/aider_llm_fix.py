@@ -276,6 +276,12 @@ Strict rules — follow all of them:
     REMOVE the old logic completely from your SEARCH block's replacement. Do NOT
     append the new logic below the old logic. Do NOT leave the old logic commented
     out. The replacement code must cleanly overwrite the old code.
+19. IMPORT PLACEMENT: When a fix requires adding a new `import` statement, you
+    MUST place it at the top of the file alongside the existing imports — NEVER
+    inside a function body or class body. An import inside a function (e.g.
+    `import secrets` inside `def generate_token`) will cause a lint error (PLC0415)
+    and the fix will be discarded. The only exception is if the existing file
+    already uses inline imports as a deliberate pattern throughout.
 """
 
                 log.info("aider_llm_fix_file_start", file=file_path)

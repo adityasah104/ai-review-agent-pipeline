@@ -271,6 +271,11 @@ Strict rules — follow all of them:
     of existing comments in the file. If a comment like `# CLEAN:` or
     `# NOTE:` already exists, leave it exactly as-is. Only add a new comment
     if one is strictly required to explain a non-obvious security fix (rule 12).
+18. NO DUPLICATION: When replacing old logic with new logic (e.g. replacing a
+    function call, changing an import, or changing a return statement), you MUST
+    REMOVE the old logic completely from your SEARCH block's replacement. Do NOT
+    append the new logic below the old logic. Do NOT leave the old logic commented
+    out. The replacement code must cleanly overwrite the old code.
 """
 
                 log.info("aider_llm_fix_file_start", file=file_path)
@@ -304,7 +309,7 @@ Strict rules — follow all of them:
                         "--no-stream",
                         "--no-git",
                         "--map-tokens", "1024",
-                        "--edit-format", "diff",
+                        "--edit-format", "diff-fenced",
                         "--lint-cmd", "python: ruff check",
                         "--auto-lint",
                         "--model", "bedrock/amazon.nova-pro-v1:0",
@@ -476,7 +481,7 @@ Strict rules — follow all of them:
                         "aider", "--yes", "--no-gui", "--no-show-release-notes",
                         "--no-show-model-warnings", "--no-check-update",
                         "--no-auto-commits", "--no-stream", "--no-git",
-                        "--map-tokens", "0", "--edit-format", "diff",
+                        "--map-tokens", "0", "--edit-format", "diff-fenced",
                         "--lint-cmd", "python: ruff check", "--auto-lint",
                         "--model", "bedrock/amazon.nova-pro-v1:0",
                         "--message", ci_prompt, fp,

@@ -278,6 +278,7 @@ Strict rules — follow all of them:
 
                 fixed = False
                 feedback = ""
+                aider_made_changes_overall = False
 
                 for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
                     prompt = base_file_prompt
@@ -328,6 +329,10 @@ Strict rules — follow all of them:
                             file=file_path, attempt=attempt, returncode=result.returncode,
                         )
 
+                    diff_check = subprocess.run(["git", "diff", "--", file_path], cwd=repo_path, capture_output=True)
+                    if diff_check.stdout.strip():
+                        aider_made_changes_overall = True
+
                     subprocess.run(["ruff", "format", file_path], cwd=repo_path, capture_output=True)
                     subprocess.run(
                         ["ruff", "check", "--fix", "--unsafe-fixes", file_path],
@@ -345,9 +350,12 @@ Strict rules — follow all of them:
                     introduced_sqlfluff = new_sqlfluff - baseline_sqlfluff
 
                     if not introduced_ruff and not introduced_sqlfluff:
-                        files_fixed.append(file_path)
-                        fixed = True
-                        log.info("aider_llm_fix_file_passed", file=file_path, attempt=attempt)
+                        if aider_made_changes_overall:
+                            files_fixed.append(file_path)
+                            fixed = True
+                            log.info("aider_llm_fix_file_passed", file=file_path, attempt=attempt)
+                        else:
+                            log.warning("aider_llm_fix_no_changes_made", file=file_path, attempt=attempt)
                         break
 
                     feedback = (
@@ -369,7 +377,7 @@ Strict rules — follow all of them:
                         for f in file_findings
                     )
                     finding_severities = [str(f.get("severity", "")).lower() for f in file_findings]
-                    if has_major_critical and _is_syntactically_valid(repo_path, file_path):
+                    if has_major_critical and aider_made_changes_overall and _is_syntactically_valid(repo_path, file_path):
                         files_fixed.append(file_path)
                         files_kept_with_warnings.append(file_path)
                         log.warning(

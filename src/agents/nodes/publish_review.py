@@ -50,47 +50,79 @@ def _findings_table(findings: list, lines: list) -> None:
 def _build_comment(state: PRReviewState) -> str:
     lines = []
 
-    lines.append("## AI Code Review")
+    lines.append("## 🤖 AI Code Review")
     lines.append("")
-    # Tag the actual PR author by their ADO unique name using < > so it becomes clickable
     author_tag = f"@<{state.pr_author_id}>" if state.pr_author_id else "@Author"
     lines.append(f"cc: {author_tag}")
     lines.append("")
-    
-    if state.status == "CI_FIX_GAVE_UP":
-        lines.append("> **Warning:** Attempted CI fixes but pipeline is still failing. Manual intervention required.")
-        lines.append("")
 
-    lines.append("")
+    if state.status == "CI_FIX_GAVE_UP":
+        lines.append("> **⚠️ Warning:** Attempted CI fixes but pipeline is still failing. Manual intervention required.")
+        lines.append("")
 
     # Use refined findings if available, otherwise fallback to raw findings
     findings = state.refined_findings if state.refined_findings else state.findings
-    
+
     high_confidence_findings = [f for f in findings if float(f.get("confidence", 0.0)) >= settings.MIN_FIX_CONFIDENCE]
-    low_confidence_findings = [f for f in findings if float(f.get("confidence", 0.0)) < settings.MIN_FIX_CONFIDENCE]
+    low_confidence_findings  = [f for f in findings if float(f.get("confidence", 0.0)) <  settings.MIN_FIX_CONFIDENCE]
 
     if high_confidence_findings:
-        lines.append("Review-agent found these issues and applied fixes on a separate agent branch:")
+        # Agent found and fixed real issues
+        lines.append("### 🔧 Issues Found & Auto-Fixed")
+        lines.append("")
+        lines.append(
+            f"The agent detected **{len(high_confidence_findings)} high-confidence issue(s)** and applied fixes on a separate agent branch. "
+            "Please review the agent branch and merge it if the fixes look correct."
+        )
         lines.append("")
         _findings_table(high_confidence_findings, lines)
+
         if low_confidence_findings:
-            lines.append("### ⚠️ Additional Low-Confidence Findings")
-            lines.append("The following issues were flagged but skipped for auto-fixing due to low confidence:")
+            lines.append("---")
+            lines.append("")
+            lines.append("### ⚠️ Low-Confidence Findings — Needs Manual Review")
+            lines.append("")
+            lines.append(
+                f"The following **{len(low_confidence_findings)} finding(s)** were flagged but **not auto-fixed** "
+                f"because confidence was below the threshold (`{int(settings.MIN_FIX_CONFIDENCE * 100)}%`). "
+                "Please review them manually:"
+            )
             lines.append("")
             _findings_table(low_confidence_findings, lines)
+
     elif low_confidence_findings:
-        lines.append("### ✅ Code is mostly Good to Go!")
+        # Clean on high-confidence but has lower-confidence flags
+        lines.append("### ✅ Good to Go — No High-Confidence Issues Found")
         lines.append("")
-        lines.append("There were no high-confidence issues that required agent auto-fixes, but the following low-confidence issues were flagged for your review:")
+        lines.append(
+            "The agent reviewed this PR and found **no issues requiring an auto-fix**. "
+            "You are good to merge!"
+        )
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        lines.append("### ⚠️ Low-Confidence Findings — Needs Manual Review")
+        lines.append("")
+        lines.append(
+            f"However, the agent flagged **{len(low_confidence_findings)} lower-confidence finding(s)** "
+            f"that were **not auto-fixed** (confidence below `{int(settings.MIN_FIX_CONFIDENCE * 100)}%`). "
+            "These may or may not be real issues — please take a look before merging:"
+        )
         lines.append("")
         _findings_table(low_confidence_findings, lines)
+
     else:
-        lines.append("### ✅ Code is Good to Go!")
+        # Completely clean
+        lines.append("### ✅ Good to Go — No Issues Found")
         lines.append("")
-        lines.append("I have reviewed the changes in this PR and found no issues. No agent branch or fixes were needed.")
+        lines.append(
+            "The agent reviewed the changes in this PR and found **no issues**. "
+            "No auto-fixes were needed. You are good to merge!"
+        )
         lines.append("")
 
     return "\n".join(lines)
+
 
 
 async def run(state: PRReviewState) -> dict:

@@ -283,6 +283,7 @@ Strict rules — follow all of them:
     `import secrets` inside `def generate_token`) will cause a lint error (PLC0415)
     and the fix will be discarded. The only exception is if the existing file
     already uses inline imports as a deliberate pattern throughout.
+20. TRUNCATION PROTECTION: You MUST output the entire file from start to finish. DO NOT truncate the file. DO NOT leave out any existing logic at the bottom of the file.
 """
 
                 log.info("aider_llm_fix_file_start", file=file_path)

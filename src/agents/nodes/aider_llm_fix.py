@@ -512,13 +512,14 @@ Strict rules — follow all of them:
                         f"Strict Rules:\n"
                         f"- Fix ONLY the lint errors above. Do NOT touch, rename, or change any business logic.\n"
                         f"- Ensure the file is syntactically valid.\n"
-                        f"- If it is a SQL file, ensure exactly one clause per line for SELECT/FROM/WHERE, and preserve all column names."   
+                        f"- If it is a SQL file, ensure exactly one clause per line for SELECT/FROM/WHERE, and preserve all column names.\n"
+                        f"- If an import relies on variable assignments or environment setup placed above it, do not move the import. Instead, append `# noqa: E402` to the end of the import line."
                     )
                     aider_ci_cmd = [
                         "aider", "--yes", "--no-gui", "--no-show-release-notes",
                         "--no-show-model-warnings", "--no-check-update",
                         "--no-auto-commits", "--no-stream", "--no-git",
-                        "--map-tokens", "0", "--edit-format", "diff-fenced",
+                        "--map-tokens", "0", "--edit-format", "whole",
                         "--lint-cmd", "python: ruff check", "--auto-lint",
                         "--model", "bedrock/amazon.nova-pro-v1:0",
                         "--message", ci_prompt, fp,

@@ -316,7 +316,7 @@ Strict rules — follow all of them:
                         "--no-stream",
                         "--no-git",
                         "--map-tokens", "1024",
-                        "--edit-format", "diff-fenced",
+                        "--edit-format", "whole",
                         "--lint-cmd", "python: ruff check",
                         "--auto-lint",
                         "--model", "bedrock/amazon.nova-pro-v1:0",

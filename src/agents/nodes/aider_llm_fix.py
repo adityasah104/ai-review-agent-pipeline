@@ -89,7 +89,11 @@ def run(state: PRReviewState) -> dict:
 
     if not fixable_findings:
         log.info("aider_llm_fix_no_high_confidence_findings")
-        # Don't return early — still check out branch and run CI linting below
+        return {
+            "aider_fix_applied": False,
+            "aider_fix_summary": "No high-confidence findings to fix. Pipeline skipped.",
+            "agent_branch": "",
+        }
 
     repo_path = settings.DEMO_REPO_PATH
     developer_branch = state.source_branch.replace("refs/heads/", "")

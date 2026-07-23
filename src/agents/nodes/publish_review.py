@@ -21,8 +21,8 @@ CATEGORY_LABEL = {
 
 def _findings_table(findings: list, lines: list) -> None:
     """Renders a single markdown table with findings and their corresponding fixes."""
-    lines.append("| Severity | File | Location | Confidence | Issue | Fix Applied |")
-    lines.append("|----------|------|----------|------------|-------|-------------|")
+    lines.append("| Severity | File | Line | Confidence | Issue |")
+    lines.append("|----------|------|------|------------|-------|")
 
     for f in findings:
         severity  = f.get("severity", "minor")
@@ -34,15 +34,22 @@ def _findings_table(findings: list, lines: list) -> None:
             
         conf_val  = float(f.get("confidence", 0.0))
         conf_pct  = f"{int(conf_val * 100)}%"
-        desc      = f.get("description", "").replace("|", "\\|")
-        suggestion = f.get("suggestion", "").replace("|", "\\|")
+        raw_desc = f.get("description", "")
+        if "Improved Code:" in raw_desc:
+            raw_desc = raw_desc.split("Improved Code:")[0].strip()
+        elif "\n\n" in raw_desc:
+            raw_desc = raw_desc.split("\n\n")[0].strip()
+        
+        desc = raw_desc.replace("|", "\\|")
 
         skipped = ""
         if conf_val < settings.MIN_FIX_CONFIDENCE:
             skipped = " *(auto-fix skipped)*"
+            
+        desc = f"{desc}{skipped}"
 
         lines.append(
-            f"| {badge} | `{file_path}` | {line_hint} | {conf_pct} | {desc} | {suggestion}{skipped} |"
+            f"| {badge} | `{file_path}` | {line_hint} | {conf_pct} | {desc} |"
         )
     lines.append("")
 

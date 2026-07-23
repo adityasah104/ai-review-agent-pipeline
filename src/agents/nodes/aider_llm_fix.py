@@ -83,7 +83,7 @@ def run(state: PRReviewState) -> dict:
     fixable_findings = [
         f for f in active_findings
         if str(f.get("severity", "")).lower() in ("minor", "major", "critical")
-        and str(f.get("category", "")).lower() in ("code_quality", "performance", "security")
+        and str(f.get("category", "")).lower() in ("code_quality", "performance", "security", "bug")
         and float(f.get("confidence", 0.0)) >= settings.MIN_FIX_CONFIDENCE
     ]
 

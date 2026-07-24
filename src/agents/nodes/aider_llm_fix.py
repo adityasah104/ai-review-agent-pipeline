@@ -283,6 +283,7 @@ Strict rules — follow all of them:
     and the fix will be discarded. The only exception is if the existing file
     already uses inline imports as a deliberate pattern throughout.
 20. TRUNCATION PROTECTION: You MUST output the entire file from start to finish. DO NOT truncate the file. DO NOT leave out any existing logic at the bottom of the file.
+21. NEVER CREATE NEW FILES: You are strictly forbidden from creating any new files. You must only edit the exact file provided to you. If you invent, suggest, or create a new file, your changes will be discarded.
 """
 
                 log.info("aider_llm_fix_file_start", file=file_path)

@@ -7,7 +7,7 @@ langchain>=0.2.6
 langchain-community>=0.2.6
 langchain-aws>=0.1.9
 boto3
-chromadb
+
 structlog
 ruff
 sqlfluff

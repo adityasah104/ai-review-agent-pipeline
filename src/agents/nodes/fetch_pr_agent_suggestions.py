@@ -1,8 +1,5 @@
-import json
-import httpx
 import structlog
 from src.agents.state import PRReviewState
-from src.config.settings import settings
 
 log = structlog.get_logger()
 
@@ -13,19 +10,15 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
     if not findings:
         return {"refined_findings": []}
 
+    import json
+
     def sanitize_finding(f: dict) -> dict:
         """
         Cleans a finding before sending to PR-Agent.
-        - Ensures file_path is always present
-        - Fixes hallucinated 'file_number' -> 'line_number'
-        - Ensures line_number is always an integer
-        - Keeps only known fields PR-Agent's schema expects
         """
-        # Fix hallucinated field name
         if "file_number" in f and "line_number" not in f:
             f["line_number"] = f.pop("file_number")
 
-        # Ensure line_number is an integer
         raw_line = f.get("line_number")
         if raw_line is not None:
             try:
@@ -43,30 +36,71 @@ def fetch_pr_agent_suggestions_node(state: PRReviewState) -> dict:
             "confidence":  float(f.get("confidence", 1.0)),
         }
 
-    # 1. Send data to PR-Agent (sanitized)
     sanitized = [sanitize_finding(f) for f in findings if f.get("file_path") or f.get("file_number")]
-    payload = {
-        "pr_id": pr_id,
-        "my_suggestions": sanitized
-    }
-
-    print("\n--- FINDINGS BEING SENT TO PR_AGENT ---")
-    print(json.dumps(payload, indent=2))
+    
+    print("\n--- FINDINGS BEING PASSED TO PR_AGENT NATIVELY ---")
+    print(json.dumps(sanitized, indent=2))
     print("--------------------------------------\n")
 
     try:
-        # Synchronous request with long timeout since PR-Agent runs on localhost
-        response = httpx.post(settings.PR_AGENT_REFINE_URL, json=payload, timeout=300.0)
-        response.raise_for_status()
+        import sys
+        import os
+        import asyncio
+        import concurrent.futures
         
-        refined_findings = response.json().get("refined_findings", [])
-        log.info("received_refined_findings_from_pr_agent", pr_id=pr_id)
+        # Dynamically add pr-agent to sys.path so we can import it
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../"))
+        pr_agent_path = os.path.join(base_dir, "pr-agent-latest-")
+        if not os.path.exists(pr_agent_path):
+            pr_agent_path = os.path.join(base_dir, "michael_repo") # ADO Pipeline folder name
+            
+        if pr_agent_path not in sys.path:
+            sys.path.insert(0, pr_agent_path)
+            
+        from pr_agent.app18 import receive_findings, IncomingFindingsPayload
         
-        print("\n=== REFINED FINDINGS RECEIVED FROM PR_AGENT ===")
-        print(json.dumps(refined_findings, indent=2))
-        print("==============================================\n")
+        payload_model = IncomingFindingsPayload(pr_id=pr_id, my_suggestions=sanitized)
+        log.info("running_pr_agent_natively", pr_id=pr_id)
         
+        # Run the async PR-Agent function safely in a separate thread
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, receive_findings(payload_model))
+            result = future.result()
+        
+        refined_findings = result.get("refined_findings", [])
+        
+        # Enforce that "best practice" is classified under "code_quality"
+        for finding in refined_findings:
+            if finding.get("category", "").lower().strip() == "best practice":
+                finding["category"] = "code_quality"
+
+        # Drop suggestions where improved_code only *appends* lines on top of existing_code
+        # without actually modifying the flagged line itself. These are opinionated additions
+        # (e.g. adding a ValueError guard after an os.getenv call) — not real fixes.
+        def _is_additive_only(finding: dict) -> bool:
+            existing = (finding.get("existing_code") or "").strip()
+            improved = (finding.get("improved_code") or "").strip()
+            if not existing or not improved:
+                return False
+            # If every line of existing_code appears verbatim in improved_code AND
+            # improved_code has more lines, the suggestion only adds new lines.
+            existing_lines = [l.strip() for l in existing.splitlines() if l.strip()]
+            improved_lines = [l.strip() for l in improved.splitlines() if l.strip()]
+            if not existing_lines:
+                return False
+            all_existing_preserved = all(line in improved_lines for line in existing_lines)
+            return all_existing_preserved and len(improved_lines) > len(existing_lines)
+
+        before_count = len(refined_findings)
+        refined_findings = [f for f in refined_findings if not _is_additive_only(f)]
+        dropped = before_count - len(refined_findings)
+        if dropped:
+            log.info("fetch_pr_agent_dropped_additive_suggestions", dropped=dropped)
+
+        log.info("received_refined_findings_from_pr_agent_natively", pr_id=pr_id, count=len(refined_findings))
+            
         return {"refined_findings": refined_findings}
+        
     except Exception as e:
-        log.error("failed_to_get_suggestions_from_pr_agent", error=str(e))
+        log.error("failed_to_run_pr_agent_natively", error=str(e))
         return {"refined_findings": findings} # Fallback

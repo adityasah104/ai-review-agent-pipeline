@@ -1,7 +1,7 @@
 import subprocess
 import structlog
 from src.agents.state import PRReviewState
-from src.azure_client.pr_client import get_pr_diff, get_file_content
+from src.azure_client.pr_client import get_pr_diff, get_file_content, get_pr_metadata
 from src.config.settings import settings
 from src.azure_client.auth import get_azure_devops_token
 
@@ -14,11 +14,21 @@ async def run(state: PRReviewState) -> dict:
     Only fetches Python (.py) and SQL (.sql) files — skips everything else.
     Also computes a unified git diff for each file so LLM agents review
     only the changed lines, not the entire file.
+    Also fetches the PR author's ADO uniqueName for @mention.
     """
     log.info("ingestion_start", pr_id=state.pr_id)
 
     try:
         changes = await get_pr_diff(state.repository_id, state.pr_id)
+
+        # Fetch PR author for @mention on the agent PR
+        pr_author_id = ""
+        try:
+            pr_meta = await get_pr_metadata(state.repository_id, state.pr_id)
+            pr_author_id = pr_meta.get("createdBy", {}).get("id", "")
+            log.info("ingestion_pr_author", author=pr_author_id)
+        except Exception as e:
+            log.warning("ingestion_pr_author_failed", error=str(e))
 
         changed_files = []
         file_contents = {}
@@ -34,6 +44,10 @@ async def run(state: PRReviewState) -> dict:
 
             # Skip deleted files
             if "delete" in change_type.lower():
+                continue
+
+            # Skip vector DB/chroma directories
+            if "chroma_db" in path.lower() or "chroma" in path.lower():
                 continue
 
             changed_files.append({
@@ -88,6 +102,7 @@ async def run(state: PRReviewState) -> dict:
             "changed_files": changed_files,
             "file_contents": file_contents,
             "file_diffs": file_diffs,
+            "pr_author_id": pr_author_id,
             "status": "INGESTED",
         }
 

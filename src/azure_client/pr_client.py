@@ -81,3 +81,110 @@ async def post_pr_comment(repository_id: str, pr_id: int, comment_text: str) -> 
         )
         resp.raise_for_status()
         return resp.json()
+    
+    #Multi-branch Approach
+    
+async def get_pr_metadata(repository_id: str, pr_id: int) -> Dict:
+    """Fetches full PR metadata including the createdBy field (author)."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        headers = await get_auth_headers()
+        resp = await client.get(
+            f"{_base_url()}/git/repositories/{repository_id}/pullRequests/{pr_id}",
+            headers=headers,
+            params={"api-version": "7.1"},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def create_branch(repository_id: str, new_branch: str, base_branch: str) -> bool:
+    """
+    Creates a new branch in ADO from the tip of base_branch.
+    ADO branch creation uses the refs/update API.
+    We need the current objectId (commit SHA) of base_branch as starting point.
+    Returns True on success.
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        headers = await get_auth_headers()
+
+        # Step 1: Get current commit SHA of base_branch
+        refs_resp = await client.get(
+            f"{_base_url()}/git/repositories/{repository_id}/refs",
+            headers=headers,
+            params={"filter": f"heads/{base_branch}", "api-version": "7.1"},
+        )
+        refs_resp.raise_for_status()
+        refs = refs_resp.json().get("value", [])
+        if not refs:
+            raise ValueError(f"Base branch '{base_branch}' not found in ADO")
+        base_object_id = refs[0]["objectId"]
+
+        # Step 2: Create the new branch pointing at that commit
+        create_resp = await client.post(
+            f"{_base_url()}/git/repositories/{repository_id}/refs",
+            headers=headers,
+            params={"api-version": "7.1"},
+            json=[
+                {
+                    "name": f"refs/heads/{new_branch}",
+                    "oldObjectId": "0000000000000000000000000000000000000000",
+                    "newObjectId": base_object_id,
+                }
+            ],
+        )
+        create_resp.raise_for_status()
+        result = create_resp.json().get("value", [{}])[0]
+        return result.get("success", False)
+
+
+async def create_pull_request(
+    repository_id: str,
+    source_branch: str,
+    target_branch: str,
+    title: str,
+    description: str,
+    reviewer_ids: Optional[List[str]] = None,
+) -> Dict:
+    """
+    Creates a Pull Request in ADO from source_branch to target_branch.
+    reviewer_ids is a list of ADO UUIDs.
+    Returns the full PR response JSON (contains pullRequestId, etc.)
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        headers = await get_auth_headers()
+        # ADO resolves reviewers by UUID using the 'id' field
+        reviewers = [{"id": rid} for rid in (reviewer_ids or []) if rid]
+        body = {
+            "title": title,
+            "description": description,
+            "sourceRefName": f"refs/heads/{source_branch}",
+            "targetRefName": f"refs/heads/{target_branch}",
+            "reviewers": reviewers,
+        }
+        resp = await client.post(
+            f"{_base_url()}/git/repositories/{repository_id}/pullRequests",
+            headers=headers,
+            params={"api-version": "7.1"},
+            json=body,
+        )
+        resp.raise_for_status()
+        return resp.json()
+async def get_existing_pull_request(repository_id: str, source_branch: str, target_branch: str) -> Optional[Dict]:
+    """Finds an existing active PR between source_branch and target_branch."""
+    async with httpx.AsyncClient(timeout=30) as client:
+        headers = await get_auth_headers()
+        resp = await client.get(
+            f"{_base_url()}/git/repositories/{repository_id}/pullRequests",
+            headers=headers,
+            params={
+                "searchCriteria.sourceRefName": f"refs/heads/{source_branch}",
+                "searchCriteria.targetRefName": f"refs/heads/{target_branch}",
+                "searchCriteria.status": "active",
+                "api-version": "7.1",
+            },
+        )
+        if resp.status_code == 200:
+            prs = resp.json().get("value", [])
+            if prs:
+                return prs[0]
+        return None

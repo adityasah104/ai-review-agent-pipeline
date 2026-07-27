@@ -1,0 +1,27 @@
+{
+  "id": "limitations",
+  "title": "Known Limitations",
+  "description": "1. Truncation risk on large files — the current model (amazon.nova-pro) is used with --edit-format whole (full file rewrite) rather than diff-fenced, because it struggles to produce reliable diff blocks. On very large files this can hit the model's output token ceiling, occasionally causing silent deletion of code at the bottom of the file.",
+  "source": "@site/docs/limitations.md",
+  "sourceDirName": ".",
+  "slug": "/limitations",
+  "permalink": "/ai-review-agent-pipeline/docs/limitations",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 7,
+  "frontMatter": {
+    "sidebar_position": 7,
+    "title": "Known Limitations"
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Safety Mechanisms",
+    "permalink": "/ai-review-agent-pipeline/docs/safety"
+  },
+  "next": {
+    "title": "Troubleshooting",
+    "permalink": "/ai-review-agent-pipeline/docs/troubleshooting"
+  }
+}

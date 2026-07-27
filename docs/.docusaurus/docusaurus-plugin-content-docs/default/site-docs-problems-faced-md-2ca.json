@@ -1,0 +1,23 @@
+{
+  "id": "problems-faced",
+  "title": "Problems Faced & Solutions",
+  "description": "Building an autonomous agent that directly edits and pushes code to production repositories requires extreme safety guardrails. During the development of this pipeline, several complex challenges arose.",
+  "source": "@site/docs/problems-faced.md",
+  "sourceDirName": ".",
+  "slug": "/problems-faced",
+  "permalink": "/ai-review-agent-pipeline/docs/problems-faced",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 9,
+  "frontMatter": {
+    "sidebar_position": 9,
+    "title": "Problems Faced & Solutions"
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Troubleshooting",
+    "permalink": "/ai-review-agent-pipeline/docs/troubleshooting"
+  }
+}

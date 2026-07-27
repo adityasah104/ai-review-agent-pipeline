@@ -1,0 +1,27 @@
+{
+  "id": "troubleshooting",
+  "title": "Troubleshooting",
+  "description": "| Symptom | Likely Cause | Fix |",
+  "source": "@site/docs/troubleshooting.md",
+  "sourceDirName": ".",
+  "slug": "/troubleshooting",
+  "permalink": "/ai-review-agent-pipeline/docs/troubleshooting",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 8,
+  "frontMatter": {
+    "sidebar_position": 8,
+    "title": "Troubleshooting"
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Known Limitations",
+    "permalink": "/ai-review-agent-pipeline/docs/limitations"
+  },
+  "next": {
+    "title": "Problems Faced & Solutions",
+    "permalink": "/ai-review-agent-pipeline/docs/problems-faced"
+  }
+}

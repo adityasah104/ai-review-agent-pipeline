@@ -1,0 +1,27 @@
+{
+  "id": "safety",
+  "title": "Safety Mechanisms",
+  "description": "This pipeline is designed to never silently corrupt code or loop forever.",
+  "source": "@site/docs/safety.md",
+  "sourceDirName": ".",
+  "slug": "/safety",
+  "permalink": "/ai-review-agent-pipeline/docs/safety",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 6,
+  "frontMatter": {
+    "sidebar_position": 6,
+    "title": "Safety Mechanisms"
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Customization",
+    "permalink": "/ai-review-agent-pipeline/docs/customization"
+  },
+  "next": {
+    "title": "Known Limitations",
+    "permalink": "/ai-review-agent-pipeline/docs/limitations"
+  }
+}

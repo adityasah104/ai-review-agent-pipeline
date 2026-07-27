@@ -1,0 +1,27 @@
+{
+  "id": "configuration",
+  "title": "Configuration Reference",
+  "description": "All configuration is read via pydantic-settings from environment variables.",
+  "source": "@site/docs/configuration.md",
+  "sourceDirName": ".",
+  "slug": "/configuration",
+  "permalink": "/ai-review-agent-pipeline/docs/configuration",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 3,
+  "frontMatter": {
+    "sidebar_position": 3,
+    "title": "Configuration Reference"
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Architecture",
+    "permalink": "/ai-review-agent-pipeline/docs/architecture"
+  },
+  "next": {
+    "title": "Azure DevOps Setup",
+    "permalink": "/ai-review-agent-pipeline/docs/azure-devops"
+  }
+}

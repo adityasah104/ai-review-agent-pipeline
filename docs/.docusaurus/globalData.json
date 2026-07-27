@@ -1,0 +1,73 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/ai-review-agent-pipeline/docs",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/ai-review-agent-pipeline/docs",
+          "mainDocId": "getting-started",
+          "docs": [
+            {
+              "id": "architecture",
+              "path": "/ai-review-agent-pipeline/docs/architecture",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "azure-devops",
+              "path": "/ai-review-agent-pipeline/docs/azure-devops",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "configuration",
+              "path": "/ai-review-agent-pipeline/docs/configuration",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "customization",
+              "path": "/ai-review-agent-pipeline/docs/customization",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "getting-started",
+              "path": "/ai-review-agent-pipeline/docs/getting-started",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "limitations",
+              "path": "/ai-review-agent-pipeline/docs/limitations",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "problems-faced",
+              "path": "/ai-review-agent-pipeline/docs/problems-faced",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "safety",
+              "path": "/ai-review-agent-pipeline/docs/safety",
+              "sidebar": "tutorialSidebar"
+            },
+            {
+              "id": "troubleshooting",
+              "path": "/ai-review-agent-pipeline/docs/troubleshooting",
+              "sidebar": "tutorialSidebar"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "tutorialSidebar": {
+              "link": {
+                "path": "/ai-review-agent-pipeline/docs/getting-started",
+                "label": "getting-started"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}

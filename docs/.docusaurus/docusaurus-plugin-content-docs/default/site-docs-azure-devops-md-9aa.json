@@ -1,0 +1,27 @@
+{
+  "id": "azure-devops",
+  "title": "Azure DevOps Setup",
+  "description": "1. Create the Pipeline",
+  "source": "@site/docs/azure-devops.md",
+  "sourceDirName": ".",
+  "slug": "/azure-devops",
+  "permalink": "/ai-review-agent-pipeline/docs/azure-devops",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 4,
+  "frontMatter": {
+    "sidebar_position": 4,
+    "title": "Azure DevOps Setup"
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Configuration Reference",
+    "permalink": "/ai-review-agent-pipeline/docs/configuration"
+  },
+  "next": {
+    "title": "Customization",
+    "permalink": "/ai-review-agent-pipeline/docs/customization"
+  }
+}

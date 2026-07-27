@@ -1,0 +1,27 @@
+{
+  "id": "customization",
+  "title": "Customization",
+  "description": "| What you want to change | Where |",
+  "source": "@site/docs/customization.md",
+  "sourceDirName": ".",
+  "slug": "/customization",
+  "permalink": "/ai-review-agent-pipeline/docs/customization",
+  "draft": false,
+  "unlisted": false,
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 5,
+  "frontMatter": {
+    "sidebar_position": 5,
+    "title": "Customization"
+  },
+  "sidebar": "tutorialSidebar",
+  "previous": {
+    "title": "Azure DevOps Setup",
+    "permalink": "/ai-review-agent-pipeline/docs/azure-devops"
+  },
+  "next": {
+    "title": "Safety Mechanisms",
+    "permalink": "/ai-review-agent-pipeline/docs/safety"
+  }
+}

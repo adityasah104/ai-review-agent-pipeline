@@ -68,8 +68,8 @@ function HomepageHeader() {
           <Link className={styles.primaryButton} to="/docs/getting-started">
             Get Started
           </Link>
-          <Link className={styles.secondaryButton} href="https://github.com/adityasah104/ai-review-agent-pipeline">
-            View on GitHub
+          <Link className={styles.secondaryButton} href="https://gitlab.com/adityasah104/ai-review-agent-pipeline">
+            View on GitLab
           </Link>
         </div>
       </div>

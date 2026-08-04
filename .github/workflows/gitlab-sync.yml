@@ -3,17 +3,24 @@ name: Sync to GitLab
 on:
   push:
     branches:
-      - main   # change if using another branch
+      - main
 
 jobs:
   sync:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout full repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ✅ full history
+
+      - name: Ensure full history (extra safety)
+        run: |
+          git fetch --unshallow || true
+          git fetch --all
 
       - name: Push to GitLab
         run: |
           git remote add gitlab https://oauth2:${{ secrets.GITLAB_TOKEN }}@gitlab.com/adityasah104/ai-review-agent-pipeline.git
-          git push gitlab main --force
+          git push gitlab main

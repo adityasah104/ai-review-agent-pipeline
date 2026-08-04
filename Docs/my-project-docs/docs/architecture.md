@@ -57,7 +57,9 @@ This pipeline stands on the shoulders of two incredible open-source agents:
 │   ├── agents/
 │   │   ├── graph.py                  # LangGraph wiring
 │   │   ├── state.py                  # Shared pipeline state (Pydantic model)
-│   │   ├── utils/llm.py              # Bedrock invocation helper
+│   │   ├── utils/
+│   │   │   ├── llm.py              # Bedrock invocation helper
+│   │   │   └── guidelines.py       # Dynamic markdown loader
 │   │   └── nodes/
 │   │       ├── ingestion.py          # Pulls changed files + diffs from ADO
 │   │       ├── code_quality.py       # LLM pass: bugs/style
@@ -73,8 +75,9 @@ This pipeline stands on the shoulders of two incredible open-source agents:
 │   │   ├── pr_client.py              # ADO REST wrappers (PRs, branches, comments)
 │   │   └── ci_client.py              # ADO build/log wrappers
 │   ├── guidelines/
-│   │   ├── python_guidelines.md
-│   │   └── dbt_guidelines.md
+│   │   ├── code_quality.md           # Dynamically loaded quality rules
+│   │   ├── security.md               # Dynamically loaded security rules
+│   │   └── performance.md            # Dynamically loaded performance rules
 │   └── config/
 │       └── settings.py               # pydantic-settings config object
 └── tests/

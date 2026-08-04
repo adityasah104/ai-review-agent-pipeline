@@ -8,11 +8,11 @@ title: Customization
 | What you want to change | Where |
 |---|---|
 | What counts as a "changed file" | `ingestion.py` — file extension filter |
-| What the LLM is allowed to flag | `security_audit.py` / `code_quality.py` / `performance.py` — the `STRICT CHECKLIST` block in each prompt |
+| What the LLM is allowed to flag | Edit `.md` files in `src/guidelines/` (e.g., `code_quality.md`, `security.md`, `performance.md`) |
 | Auto-fix confidence threshold | `MIN_FIX_CONFIDENCE` env var |
 | Which severities get auto-fixed | `aider_llm_fix.py` → `fixable_findings` filter |
 | How many times the CI-fix loop retries | `AIDER_MAX_CI_RETRIES` env var / `MAX_CI_LINT_ATTEMPTS` constant |
-| Coding style enforced during fixes | `src/guidelines/python_guidelines.md`, `src/guidelines/dbt_guidelines.md` |
+| Coding style enforced during fixes | (Currently implicitly handled by Aider, you can pass custom lint rules via Ruff/SQLFluff config files) |
 | PR comment formatting | `publish_review.py` → `_build_comment` / `_findings_table` |
 | Agent PR branch naming (`agent/<branch>`) | `aider_llm_fix.py` → `agent_branch = f"agent/{developer_branch}"` |
 
@@ -45,13 +45,17 @@ The underlying pattern — capture baseline lint codes, apply the fix, diff the 
 
 ### Step 3 — Inject Team-Specific Guidelines
 
-Instead of hardcoding language-specific rules directly into the backend code, the architecture supports **Modular Guidelines**. 
+The AI reviewers are fully abstracted! Instead of hardcoding language-specific rules directly into the backend code, the architecture dynamically loads **Modular Guidelines**. 
 
-The base prompt (e.g., `code_quality.py`) handles the generic LLM formatting instructions, but you can define a `STRICT CHECKLIST` inside a separate markdown file or configuration block. The agent dynamically reads this file and injects it into the prompt at runtime.
+The base prompts handle the generic LLM formatting instructions, but you simply drop your team's custom `.md` files into the `src/guidelines/` folder. The corresponding agent dynamically reads the file matching its category and injects it into its prompt at runtime.
 
-Example user-provided checklist:
+Available guideline files to override:
+- `src/guidelines/code_quality.md`
+- `src/guidelines/security.md`
+- `src/guidelines/performance.md`
+
+Example of what you can put in `code_quality.md`:
 ```text
-STRICT CHECKLIST - Look ONLY for these exact issues:
 - Severe logic errors, unhandled exceptions, or broken functionality
 - Missing context manager (with block) on file open() or similar resources
 - Mutable default arguments in function definitions (e.g. def foo(x=[]))
@@ -59,8 +63,6 @@ STRICT CHECKLIST - Look ONLY for these exact issues:
 - Missing return type annotations on new functions
 ```
 
-This ensures that the underlying Python agent code remains identical across all projects, while the team's specific coding guidelines (TypeScript rules, Java rules, etc.) are fully modular and customizable by the end-user.
-
-Add or remove lines here to match your own team's guidelines.
+This ensures that the underlying Python agent code remains identical across all projects, while the team's specific coding guidelines (TypeScript rules, Java rules, etc.) are fully modular and customizable by simply replacing the markdown files.
 
 Continue to [Safety Mechanisms](/docs/safety) to see how these customizations interact with the pipeline's guardrails.

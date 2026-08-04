@@ -1,3 +1,5 @@
+from src.agents.utils.guidelines import load_guidelines
+
 def build_code_quality_prompt(files_text: str) -> str:
     return f"""\
 You are a ruthless, senior code reviewer specializing in Python and dbt/SQL.
@@ -20,13 +22,7 @@ Review the following code changes for CODE QUALITY, LOGIC, and STYLE issues.
 You MUST ONLY report actionable bugs or explicit style/quality issues matching the checklist.
 
 STRICT CHECKLIST - Look ONLY for these exact issues:
-- Severe logic errors, unhandled exceptions, or broken functionality
-- dbt model naming convention violations that break DAG execution
-- Missing {{{{ ref() }}}} or {{{{ source() }}}} macro usage in dbt SQL
-- Missing context manager (with block) on file open() or similar resources
-- Mutable default arguments in function definitions (e.g. def foo(x=[]))
-- Bare print() statements (should use logging instead)
-- Missing return type annotations on new functions
+{load_guidelines('code_quality')}
 
 Here is the code context. You are provided with the changed lines (diff) or the full file if no diff is available:
 {files_text}

@@ -1,0 +1,9 @@
+- N+1 query patterns in Python (loops that execute database queries)
+- Inefficient JOINs or missing partition/cluster keys in dbt models
+- SELECT * in SQL (fetches unnecessary columns)
+- Large result sets loaded entirely into memory in Python
+- Blocking I/O (e.g. synchronous requests, subprocess, or file operations) inside async functions
+- Unbounded caching or memory growth from module-level mutable state
+- dbt models missing incremental materializations for large tables
+- Repeated expensive function calls inside loops
+- SQL DISTINCT or ORDER BY on large unsorted datasets without purpose

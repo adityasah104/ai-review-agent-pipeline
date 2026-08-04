@@ -1,0 +1,7 @@
+- Severe logic errors, unhandled exceptions, or broken functionality
+- dbt model naming convention violations that break DAG execution
+- Missing {{ ref() }} or {{ source() }} macro usage in dbt SQL
+- Missing context manager (with block) on file open() or similar resources
+- Mutable default arguments in function definitions (e.g. def foo(x=[]))
+- Bare print() statements (should use logging instead)
+- Missing return type annotations on new functions

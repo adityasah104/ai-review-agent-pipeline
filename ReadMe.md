@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🤖 AI PR Review & Auto-Fix Agent
+# <img src="Docs/my-project-docs/static/img/logo.svg" height="40" alt="Logo" valign="middle"> AI PR Review & Auto-Fix Agent
 
 **An autonomous, end-to-end Pull Request Review & Auto-Fix pipeline for Azure DevOps.**
 It doesn't just leave comments — it checks out the code, writes the fixes itself, runs a self-healing lint/CI loop, and opens a ready-to-merge branch before a human ever looks at it.

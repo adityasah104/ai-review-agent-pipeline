@@ -57,9 +57,14 @@ This pipeline stands on the shoulders of two incredible open-source agents:
 │   ├── agents/
 │   │   ├── graph.py                  # LangGraph wiring
 │   │   ├── state.py                  # Shared pipeline state (Pydantic model)
+│   │   ├── prompts/
+│   │   │   ├── aider_fix.py          # Prompt for Aider fixes
+│   │   │   ├── code_quality.py       # Base prompt for code quality
+│   │   │   ├── performance.py        # Base prompt for performance
+│   │   │   └── security.py           # Base prompt for security
 │   │   ├── utils/
-│   │   │   ├── llm.py              # Bedrock invocation helper
-│   │   │   └── guidelines.py       # Dynamic markdown loader
+│   │   │   ├── llm.py                # Bedrock invocation helper
+│   │   │   └── guidelines.py         # Dynamic markdown loader
 │   │   └── nodes/
 │   │       ├── ingestion.py          # Pulls changed files + diffs from ADO
 │   │       ├── code_quality.py       # LLM pass: bugs/style

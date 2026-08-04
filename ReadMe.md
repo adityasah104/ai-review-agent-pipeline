@@ -24,6 +24,7 @@ It doesn't just leave comments — it checks out the code, writes the fixes itse
 | 🔁 **Infinite-Loop Protection** | Detects and skips runs triggered by the agent's own commits, with a fail-closed design — if it can't verify authorship, it stops rather than guessing. |
 | 🎯 **Confidence-Gated Auto-Fixing** | Every finding carries a confidence score; only fixes above your configured threshold are applied automatically, everything else is surfaced for manual review. |
 | 🧩 **Model-Agnostic & Language-Agnostic** | Swap the Bedrock model, linters, or file-type filters to fit any language or stack — the fix/validate/retry pattern is fully reusable. |
+| 📝 **Dynamic Guideline Injection** | Fully abstracted prompt checklists. Customers can drop their own `.md` rules into the `src/guidelines/` folder, and the LLM agents automatically load and scan against them without any code changes. |
 | 🚫 **No Servers, No Webhooks, No Tunnels** | Runs entirely inside the Azure DevOps pipeline job. No 24/7 host, no ngrok, no SQLite queue — the pipeline *is* the queue. |
 | 📝 **Actionable PR Summaries** | Posts a clean, tabular summary comment on the original PR — severity, file, line, confidence, and issue — plus a direct link to the agent's fix PR. |
 | 🔐 **Native ADO Auth** | Uses the pipeline's built-in `$(System.AccessToken)` by default, with Service Principal or PAT fallback — no extra secrets to manage for basic setups. |

@@ -1,3 +1,5 @@
+from src.agents.utils.guidelines import load_guidelines
+
 def build_security_prompt(files_text: str) -> str:
     return f"""\
 You are a ruthless security engineer reviewing Python and SQL code for vulnerabilities.
@@ -14,16 +16,7 @@ You MUST ONLY report actionable vulnerabilities that require an immediate code c
 DO NOT report theoretical risks, subjective security "best practices", or minor nitpicks.
 
 STRICT CHECKLIST - Look ONLY for these exact issues:
-- SQL injection risks (string concatenation in SQL instead of parameterized queries)
-- Hardcoded credentials, API keys, passwords, or tokens
-- Insecure use of eval() or exec() in Python
-- User-supplied value passed directly into os.system/subprocess.run(shell=True)
-- File path built from request parameter without normalization/allowlist check
-- Insecure deserialization (yaml.load without SafeLoader, marshal, pickle)
-- SSRF, path traversal, or insecure randomness (using random for tokens/secrets instead of secrets module)
-- Authorization/access-control logic errors (e.g. bypassing checks)
-- Exposure of sensitive data in logs or error messages
-- SQL models exposing PII columns without masking
+{load_guidelines('security')}
 
 Here is the code context. You are provided with the changed lines (diff) or the full file if no diff is available:
 {files_text}

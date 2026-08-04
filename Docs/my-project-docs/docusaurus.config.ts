@@ -28,7 +28,7 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          // editUrl: 'https://github.com/adityasah104/ai-review-agent-pipeline/edit/main/Docs/my-project-docs/',
+          // editUrl: 'https://gitlab.com/adityasah104/ai-review-agent-pipeline/-/edit/main/Docs/my-project-docs/',
         },
         blog: false, // disable blog if you don't need it
         theme: {
@@ -55,8 +55,8 @@ const config: Config = {
         { to: '/docs/limitations', label: 'Limitations', position: 'left' },
         { to: '/roadmap', label: 'Roadmap', position: 'left' },
         {
-          href: 'https://github.com/adityasah104/ai-review-agent-pipeline',
-          label: 'GitHub',
+          href: 'https://gitlab.com/adityasah104/ai-review-agent-pipeline',
+          label: 'GitLab',
           position: 'right',
         },
       ],
@@ -75,15 +75,15 @@ const config: Config = {
         {
           title: 'Community',
           items: [
-            { label: 'GitHub Issues', href: 'https://github.com/adityasah104/ai-review-agent-pipeline/issues' },
-            { label: 'Discussions', href: 'https://github.com/adityasah104/ai-review-agent-pipeline/discussions' },
+            { label: 'GitLab Issues', href: 'https://gitlab.com/adityasah104/ai-review-agent-pipeline/-/issues' },
+            { label: 'Discussions', href: 'https://gitlab.com/adityasah104/ai-review-agent-pipeline/-/merge_requests' },
           ],
         },
         {
           title: 'More',
           items: [
             { label: 'Roadmap', to: '/roadmap' },
-            { label: 'GitHub', href: 'https://github.com/adityasah104/ai-review-agent-pipeline' },
+            { label: 'GitLab', href: 'https://gitlab.com/adityasah104/ai-review-agent-pipeline' },
           ],
         },
       ],

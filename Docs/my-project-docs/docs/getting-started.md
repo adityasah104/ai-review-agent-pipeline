@@ -25,7 +25,7 @@ We recommend testing the agent locally on your own machine before deploying it t
 **1. Clone the Review Agent**
 Clone this agent repository onto your local machine:
 ```bash
-git clone https://github.com/adityasah104/ai-review-agent-pipeline.git
+git clone https://gitlab.com/adityasah104/ai-review-agent-pipeline.git
 cd ai-review-agent-pipeline
 ```
 

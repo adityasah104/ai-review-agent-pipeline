@@ -7,7 +7,7 @@ It doesn't just leave comments — it checks out the code, writes the fixes itse
 
 `Azure DevOps Pipelines` · `LangGraph` · `Amazon Bedrock (Nova Pro)` · `Aider` · `Ruff` · `SQLFluff` · `PR-Agent`
 
-[**📖 Full Documentation**](https://adityasah104.github.io/ai-review-agent-pipeline/) · [**🚀 Getting Started**](https://adityasah104.github.io/ai-review-agent-pipeline/docs/getting-started) · [**🗺️ Roadmap**](https://adityasah104.github.io/ai-review-agent-pipeline/roadmap) · [**🐛 Issues**](https://github.com/adityasah104/ai-review-agent-pipeline/issues)
+[**📖 Full Documentation**](https://adityasah104.github.io/ai-review-agent-pipeline/) · [**🚀 Getting Started**](https://adityasah104.github.io/ai-review-agent-pipeline/docs/getting-started) · [**🗺️ Roadmap**](https://adityasah104.github.io/ai-review-agent-pipeline/roadmap) · [**🐛 Issues**](https://gitlab.com/adityasah104/ai-review-agent-pipeline/issues)
 
 </div>
 

@@ -24,4 +24,4 @@ If the pipeline runs but produces unexpected results, work through these in orde
 4. **Check `agent_branch_checkout_failed`** — the pipeline aborted rather than risk editing the wrong branch; verify the agent branch naming doesn't collide with an existing protected branch.
 5. **Check `local_ci_max_attempts_reached`** — the CI-fix loop hit its retry cap; the PR will still be raised, but flagged as CI-failing in the comment.
 
-If none of these explain the behavior you're seeing, open an issue on [GitHub](https://github.com/adityasah104/ai-review-agent-pipeline/issues) with the relevant log excerpt.
+If none of these explain the behavior you're seeing, open an issue on [GitLab](https://gitlab.com/adityasah104/ai-review-agent-pipeline/issues) with the relevant log excerpt.

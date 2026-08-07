@@ -7,7 +7,7 @@ It doesn't just leave comments — it checks out the code, writes the fixes itse
 
 `Azure DevOps Pipelines` · `LangGraph` · `Amazon Bedrock (Nova Pro)` · `Aider` · `Ruff` · `SQLFluff` · `PR-Agent`
 
-[**📖 Full Documentation**](https://adityasah104.github.io/ai-review-agent-pipeline/) · [**🚀 Getting Started**](https://adityasah104.github.io/ai-review-agent-pipeline/docs/getting-started) · [**🗺️ Roadmap**](https://adityasah104.github.io/ai-review-agent-pipeline/roadmap) · [**🐛 Issues**](https://gitlab.com/adityasah104/ai-review-agent-pipeline/issues)
+[**📖 Full Documentation**](https://adityasah104.gitlab.io/ai-review-agent-pipeline/) · [**🚀 Getting Started**](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/getting-started) · [**🗺️ Roadmap**](https://adityasah104.gitlab.io/ai-review-agent-pipeline/roadmap) · [**🐛 Issues**](https://gitlab.com/adityasah104/ai-review-agent-pipeline/issues)
 
 </div>
 
@@ -40,7 +40,7 @@ PR opened → Native CI checks → LangGraph review (security · quality · perf
 ```
 
 Full architecture diagram, node-by-node breakdown, and repository structure →
-**[Architecture Docs](https://adityasah104.github.io/ai-review-agent-pipeline/docs/architecture)**
+**[Architecture Docs](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/architecture)**
 
 ---
 
@@ -60,7 +60,7 @@ cp .env.example .env   # fill in your values
 ```
 
 Full prerequisites, install steps, and language-generalization guide →
-**[Getting Started Docs](https://adityasah104.github.io/ai-review-agent-pipeline/docs/getting-started)**
+**[Getting Started Docs](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/getting-started)**
 
 ---
 
@@ -68,21 +68,21 @@ Full prerequisites, install steps, and language-generalization guide →
 
 | Topic | Link |
 |---|---|
-| 🚀 Getting Started — prerequisites, install, generalizing to any repo | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/docs/getting-started) |
-| 🏗️ Architecture — pipeline diagram, node reference, repo structure | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/docs/architecture) |
-| ⚙️ Configuration — full environment variable reference | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/docs/configuration) |
-| ☁️ Azure DevOps Setup — step-by-step pipeline, secrets, branch policy | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/docs/azure-devops) |
-| 🎛️ Customization — checklists, thresholds, swapping linters/languages | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/docs/customization) |
-| 🛡️ Safety Mechanisms — loop protection, validation gates, bounded retries | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/docs/safety) |
-| ⚠️ Known Limitations — truncation risk, tool comparison | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/docs/limitations) |
-| 🧯 Troubleshooting — symptom/cause/fix table, diagnostic checklist | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/docs/troubleshooting) |
-| 🗺️ Roadmap — planned improvements | [Docs →](https://adityasah104.github.io/ai-review-agent-pipeline/roadmap) |
+| 🚀 Getting Started — prerequisites, install, generalizing to any repo | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/getting-started) |
+| 🏗️ Architecture — pipeline diagram, node reference, repo structure | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/architecture) |
+| ⚙️ Configuration — full environment variable reference | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/configuration) |
+| ☁️ Azure DevOps Setup — step-by-step pipeline, secrets, branch policy | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/azure-devops) |
+| 🎛️ Customization — checklists, thresholds, swapping linters/languages | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/customization) |
+| 🛡️ Safety Mechanisms — loop protection, validation gates, bounded retries | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/safety) |
+| ⚠️ Known Limitations — truncation risk, tool comparison | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/limitations) |
+| 🧯 Troubleshooting — symptom/cause/fix table, diagnostic checklist | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/docs/troubleshooting) |
+| 🗺️ Roadmap — planned improvements | [Docs →](https://adityasah104.gitlab.io/ai-review-agent-pipeline/roadmap) |
 
 ---
 
 
 <div align="center">
 
-**[📖 Full Documentation](https://adityasah104.github.io/ai-review-agent-pipeline/)** · Built with LangGraph, Amazon Bedrock, and Aider
+**[📖 Full Documentation](https://adityasah104.gitlab.io/ai-review-agent-pipeline/)** · Built with LangGraph, Amazon Bedrock, and Aider
 
 </div>

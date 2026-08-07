@@ -1,0 +1,16 @@
+image: node:lts
+
+pages:
+  stage: deploy
+  script:
+    - cd Docs/my-project-docs
+    - npm ci
+    - npm run build
+    - cd ../..
+    - rm -rf public
+    - cp -r Docs/my-project-docs/build public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"

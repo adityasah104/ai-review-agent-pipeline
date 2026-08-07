@@ -7,12 +7,12 @@ const config: Config = {
   tagline: 'Autonomous PR review and auto-fix for Azure DevOps',
   favicon: 'img/logo.svg',
 
-  url: 'https://adityasah104.github.io',
+  url: 'https://adityasah104.gitlab.io',
   baseUrl: '/ai-review-agent-pipeline/',
 
-  organizationName: 'adityasah104',   // GitHub org/user
+  organizationName: 'adityasah104',   // GitLab namespace
   projectName: 'ai-review-agent-pipeline',       // Repo name
-  deploymentBranch: 'gh-pages',
+  deploymentBranch: 'gl-pages', // Not strictly used by GitLab CI, but good practice
 
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
